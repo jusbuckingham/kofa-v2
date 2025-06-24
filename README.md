@@ -1,6 +1,8 @@
-# Kofa AI – News Ticker MVP
+# Kofa AI (kofa-v2)
 
-Kofa AI is an AI-powered news ticker that aggregates and summarizes current events from a Black perspective. Built using the Next.js App Router and integrated with OpenAI, MongoDB, and Kinde for auth and billing, this MVP serves as a foundation for culturally conscious AI-driven media.
+AI-powered news ticker delivering culturally conscious summaries. Built with Next.js, OpenAI, MongoDB, and Kinde.
+
+> 🚀 This project will be hosted at [https://kofa.ai](https://kofa.ai)
 
 ---
 

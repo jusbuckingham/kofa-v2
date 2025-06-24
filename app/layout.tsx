@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { KindeProvider } from "@kinde-oss/kinde-auth-nextjs/components";
+import "/styles/globals.css";
 import { AuthButtons } from "./components/AuthButtons";
+import { KindeWrapper } from "./components/KindeWrapper";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,15 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <KindeProvider
-          clientId={process.env.KINDE_CLIENT_ID!}
-          domain={process.env.KINDE_DOMAIN!}
-          redirectUri={process.env.KINDE_REDIRECT_URI!}
-          logoutUri={process.env.KINDE_LOGOUT_URI!}
-        >
+        <KindeWrapper>
           <AuthButtons />
           {children}
-        </KindeProvider>
+        </KindeWrapper>
       </body>
     </html>
   );
