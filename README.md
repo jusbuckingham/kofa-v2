@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kofa AI – News Ticker MVP
 
-## Getting Started
+Kofa AI is an AI-powered news ticker that aggregates and summarizes current events from a Black perspective. Built using the Next.js App Router and integrated with OpenAI, MongoDB, and Kinde for auth and billing, this MVP serves as a foundation for culturally conscious AI-driven media.
 
-First, run the development server:
+---
 
+## ✨ Features
+
+- 🔁 Real-time news aggregation from RSS feeds (e.g. NYT)
+- 🧠 Summarization using OpenAI GPT-4o with a culturally conscious Black American lens
+- 📰 Scrollable news ticker UI
+- 🔐 Auth via Kinde (login, logout, protected routes)
+- 💳 Billing setup through Kinde + Stripe
+- ☁️ Hosted on Vercel with MongoDB Atlas
+
+---
+
+## 🧱 Tech Stack
+
+- **Next.js** (App Router, TypeScript)
+- **Tailwind CSS** (custom themes + ticker animation)
+- **MongoDB Atlas** (NoSQL database)
+- **OpenAI GPT-4o** (summary generation)
+- **Kinde** (auth + Stripe billing integration)
+- **Vercel** (deployment)
+
+---
+
+## 🚀 Getting Started
+
+### 1. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Set Environment Variables
+Create a `.env.local` file in the root with:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+MONGODB_URI=your-mongodb-uri
+OPENAI_API_KEY=your-openai-key
+KINDE_CLIENT_ID=your-kinde-client-id
+KINDE_DOMAIN=your-org.kinde.com
+KINDE_REDIRECT_URI=http://localhost:3000/api/auth/callback
+KINDE_LOGOUT_URI=http://localhost:3000
+NEXT_PUBLIC_KINDE_BILLING_URL=https://your-org.kinde.com/billing
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Run Locally
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🛡 Protected Routes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `/dashboard` – only accessible to logged-in users
+- `/admin/*` – optionally extend middleware
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 📦 Folder Structure Highlights
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+app/
+├── layout.tsx           // App shell with KindeProvider + AuthButtons
+├── components/          // Reusable UI
+├── api/                 // Route handlers (fetch-news, get-news)
+lib/                     // MongoDB, OpenAI, Kinde session utils
+middleware.ts            // Route protection via Kinde
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## ✅ To-Do (Stretch Goals)
+
+- Search filters and topic tagging
+- Real-time updates with websockets
+- Personalized summaries by subscription tier
+
+---
+
+## 📄 License
+
+MIT
