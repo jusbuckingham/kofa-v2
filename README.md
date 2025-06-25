@@ -1,8 +1,10 @@
 # Kofa AI (kofa-v2)
 
-AI-powered news ticker delivering culturally conscious summaries. Built with Next.js, OpenAI, MongoDB, and Kinde.
+AI-powered news ticker that aggregates and summarizes stories through a culturally conscious Black lens. Built with Next.js, OpenAI, MongoDB, and Kinde.
 
 > 🚀 This project will be hosted at [https://kofa.ai](https://kofa.ai)
+
+![Kofa AI Preview](./public/images/image.png)
 
 ---
 
@@ -67,7 +69,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ```
 app/
-├── layout.tsx           // App shell with KindeProvider + AuthButtons
+├── layout.tsx           // App shell with layout and NewsTicker
 ├── components/          // Reusable UI
 ├── api/                 // Route handlers (fetch-news, get-news)
 lib/                     // MongoDB, OpenAI, Kinde session utils
@@ -81,6 +83,8 @@ middleware.ts            // Route protection via Kinde
 - Search filters and topic tagging
 - Real-time updates with websockets
 - Personalized summaries by subscription tier
+- Infinite scrolling of summaries
+- Sorting and filtering by recency, source, or popularity
 
 ---
 

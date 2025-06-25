@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@kinde-oss/kinde-auth-nextjs": "^2.8.0",
+    "mongodb": "^6.17.0",
     "next": "15.3.4",
     "react": "18.2.0",
     "react-dom": "18.2.0"

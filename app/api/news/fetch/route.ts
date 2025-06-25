@@ -10,10 +10,20 @@ export async function GET() {
     const db = await connectToDB();
     const collection = db.collection('summaries');
 
-    const feed = await parser.parseURL('https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml');
-    const entries = feed.items.slice(0, 5); // adjust count if needed
+    const mockItems = [
+      {
+        title: "Black Entrepreneurs Lead Tech Funding Surge",
+        contentSnippet: "Black founders saw a record increase in venture capital this quarter...",
+        link: "https://example.com/article1",
+      },
+      {
+        title: "Community-Led Policing Model Gains Ground",
+        contentSnippet: "New pilot programs in major cities show a decrease in violence and stronger community ties...",
+        link: "https://example.com/article2",
+      },
+    ];
 
-    for (const item of entries) {
+    for (const item of mockItems) {
       const existing = await collection.findOne({ link: item.link });
       if (existing) continue;
 
@@ -26,7 +36,7 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({ message: 'News fetched and stored.' });
+    return NextResponse.json({ message: 'Mock news processed and stored.' });
   } catch (error) {
     console.error('Error in fetch-news:', error);
     return NextResponse.json({ error: 'Failed to fetch news.' }, { status: 500 });
