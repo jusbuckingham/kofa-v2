@@ -5,19 +5,22 @@ import { summarizeWithPerspective } from '../../../lib/summarize';
 
 const parser = new Parser();
 
-const FEED_URLS = [
-  'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
-  'http://feeds.bbci.co.uk/news/rss.xml',
-  'https://www.npr.org/rss/rss.php?id=1001',
-  'https://www.theguardian.com/world/rss',
+// Define RSS feeds with associated categories
+const FEEDS = [
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',     category: 'politics' },
+  { url: 'http://feeds.bbci.co.uk/news/rss.xml',                           category: 'general' },
+  { url: 'https://www.npr.org/rss/rss.php?id=1001',                        category: 'culture' },
+  { url: 'https://www.theguardian.com/world/rss',                          category: 'world' },
 ];
+const ITEMS_PER_FEED = 10;
 
 export async function GET() {
   try {
     const db = await connectToDB();
     const collection = db.collection('summaries');
 
-    for (const url of FEED_URLS) {
+    for (const feedConfig of FEEDS) {
+      const { url, category } = feedConfig;
       let feed;
       try {
         feed = await parser.parseURL(url);
@@ -26,8 +29,9 @@ export async function GET() {
         continue;
       }
 
-      // Take up to 5 items per feed
-      const items = feed.items.slice(0, 5);
+      // Take up to ITEMS_PER_FEED items per feed
+      const items = feed.items.slice(0, ITEMS_PER_FEED);
+
       for (const item of items) {
         if (!item.link || !item.title) continue;
 
@@ -46,14 +50,17 @@ export async function GET() {
           link: item.link,
           source: feed.title || url,
           date: new Date(item.pubDate || Date.now()),
-          category: 'general', // you can refine categories later
+          category, // mapped from feedConfig
         });
       }
     }
 
     return NextResponse.json({ message: 'Aggregated and stored news successfully.' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in fetch-news:', error);
-    return NextResponse.json({ error: 'Failed to fetch and store news.' }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Unknown error', stack: error.stack },
+      { status: 500 }
+    );
   }
 }

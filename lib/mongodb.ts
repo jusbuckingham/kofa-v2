@@ -1,6 +1,12 @@
 import { MongoClient, type MongoClientOptions } from 'mongodb';
 
-const uri = process.env.MONGODB_URI!;
+// URL-encode any '#' in the URI to avoid parsing errors
+const rawUri = process.env.MONGODB_URI!;
+if (!rawUri) {
+  throw new Error('Please add your Mongo URI to .env.local');
+}
+const uri = rawUri.replace(/#/g, '%23');
+
 const options: MongoClientOptions = {
   tls: true,
   tlsAllowInvalidCertificates: false,

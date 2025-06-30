@@ -14,7 +14,7 @@ export default function NewsTicker() {
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const res = await fetch('/api/get-news?limit=20');
+        const res = await fetch('/api/news/get?limit=20');
         const json = await res.json();
         setNews(json.news || json);
       } catch (err) {
@@ -28,13 +28,13 @@ export default function NewsTicker() {
   }, []);
 
   return (
-    <div className="relative bg-black text-yellow-400 overflow-hidden py-2">
+    <div className="relative bg-black text-yellow-400 overflow-hidden h-10">
       {/* Left and right fade overlays */}
       <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-black to-transparent pointer-events-none" />
       <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-black to-transparent pointer-events-none" />
 
       {/* Scrolling container */}
-      <div className="flex whitespace-nowrap animate-marquee gap-12 px-8 hover:[animation-play-state:paused]">
+      <div className="flex items-center whitespace-nowrap animate-marquee gap-12 px-8 hover:[animation-play-state:paused]">
         {news.map((item, i) => (
           <a
             key={i}
@@ -42,9 +42,9 @@ export default function NewsTicker() {
             target="_blank"
             rel="noopener noreferrer"
             title={item.summary}
-            className="inline-block max-w-xs hover:underline"
+            className="inline-block flex-none text-sm px-4 hover:underline"
           >
-            <strong>{item.title}</strong>: {item.summary}
+            <strong>{item.title}</strong>
           </a>
         ))}
       </div>
