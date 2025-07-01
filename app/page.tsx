@@ -1,22 +1,29 @@
-import Image from "next/image";
-import NewsTicker from "./components/NewsTicker";
+'use client';
+import Image from 'next/image';
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <>
-      {/* Top-of-page news ticker */}
-      <NewsTicker />
+    <main className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-yellow-400 via-red-500 to-pink-600 text-white px-4">
+      {/* Kofa logo */}
+      <Image
+        src="/images/image.png"
+        alt="Kofa logo"
+        width={120}
+        height={120}
+        className="mb-6"
+      />
 
-      <div className="flex items-center justify-center min-h-screen p-8 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-        <Image
-          src="/images/image.png"
-          alt="Kofa AI Preview"
-          width={900}
-          height={506}
-          className="rounded-xl shadow-xl"
-          priority
-        />
-      </div>
-    </>
+      <h1 className="text-5xl sm:text-6xl font-extrabold mb-4">
+        Kofa AI
+      </h1>
+      <p className="text-lg sm:text-xl max-w-2xl text-center mb-8">
+        Stay informed with AI-powered news summaries delivered through a culturally conscious Black lens.
+      </p>
+      <a href="/login">
+        <button className="px-6 py-3 bg-white hover:bg-gray-100 text-black font-semibold rounded-lg transition">
+          Get Started
+        </button>
+      </a>
+    </main>
   );
 }
