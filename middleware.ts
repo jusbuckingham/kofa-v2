@@ -1,18 +1,12 @@
 // middleware.ts
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { withAuth } from '@kinde-oss/kinde-auth-nextjs/middleware';
 
-export default function middleware(req: NextRequest) {
-  // Protect /dashboard
-  if (req.nextUrl.pathname.startsWith('/dashboard')) {
-    const session = req.cookies.get('session')
-    if (session !== '1') {
-      return NextResponse.redirect(new URL('/login', req.url))
-    }
-  }
-  return NextResponse.next()
-}
+export default withAuth({
+  domain: process.env.NEXT_PUBLIC_KINDE_DOMAIN,
+  loginPage: '/login',
+  callbackPath: '/api/auth/callback',
+});
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
-}
+  matcher: ['/dashboard/:path*', '/admin/:path*'],
+};

@@ -1,4 +1,6 @@
-import '/styles/globals.css';
+import '../styles/globals.css';
+import KindeWrapper from './components/KindeWrapper';
+import AuthButtons from './components/AuthButtons';
 import NewsTicker from './components/NewsTicker';
 
 export const metadata = {
@@ -14,22 +16,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <header>
-          {/* Public news ticker */}
-          <NewsTicker />
-
-          {/* Log Out button */}
-          <div className="flex justify-end bg-black py-1 px-4 z-50">
-            <a href="/api/auth/logout">
-              <button className="px-2 py-1 bg-red-600 text-white rounded">
-                Log Out
-              </button>
-            </a>
-          </div>
-        </header>
-
-        {/* Page content */}
-        {children}
+        <KindeWrapper>
+          <header>
+            <div className="flex justify-between items-center bg-black py-1 px-4">
+              <AuthButtons />
+            </div>
+            {/* News ticker bar */}
+            <NewsTicker />
+          </header>
+          {children}
+        </KindeWrapper>
       </body>
     </html>
   );

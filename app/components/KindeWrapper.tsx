@@ -1,14 +1,24 @@
-"use client";
+// app/components/KindeWrapper.tsx
+'use client';
 
-import { KindeProvider } from "@kinde-oss/kinde-auth-nextjs";
+import React from 'react';
+import { KindeProvider } from '@kinde-oss/kinde-auth-nextjs';
 
-export function KindeWrapper({ children }: { children: React.ReactNode }) {
+interface KindeWrapperProps {
+  children: React.ReactNode;
+}
+
+export default function KindeWrapper({ children }: KindeWrapperProps) {
+  if (!process.env.NEXT_PUBLIC_KINDE_CLIENT_ID || !process.env.NEXT_PUBLIC_KINDE_DOMAIN) {
+    throw new Error('Missing Kinde configuration in environment variables');
+  }
+
   return (
     <KindeProvider
-      clientId={process.env.KINDE_CLIENT_ID!}
-      domain={process.env.KINDE_DOMAIN!}
-      redirectUri={process.env.KINDE_REDIRECT_URI!}
-      logoutUri={process.env.KINDE_LOGOUT_URI!}
+      clientId={process.env.NEXT_PUBLIC_KINDE_CLIENT_ID}
+      domain={process.env.NEXT_PUBLIC_KINDE_DOMAIN}
+      redirectUri={process.env.NEXT_PUBLIC_KINDE_REDIRECT_URI!}
+      logoutUri={process.env.NEXT_PUBLIC_KINDE_LOGOUT_URI!}
     >
       {children}
     </KindeProvider>
