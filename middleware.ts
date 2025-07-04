@@ -1,12 +1,17 @@
-// middleware.ts
-import { withAuth } from '@kinde-oss/kinde-auth-nextjs/middleware';
+import { authMiddleware } from '@kinde-oss/kinde-auth-nextjs';
+import type { NextRequest } from 'next/server';
 
-export default withAuth({
-  domain: process.env.NEXT_PUBLIC_KINDE_DOMAIN,
+export default authMiddleware({
+  // where to send unauthenticated users
   loginPage: '/login',
-  callbackPath: '/api/auth/callback',
+  // your Kinde application settings from env
+  domain: process.env.KINDE_DOMAIN!,
+  clientId: process.env.KINDE_CLIENT_ID!,
+  clientSecret: process.env.KINDE_CLIENT_SECRET!,
+  postLoginRedirect: process.env.KINDE_POST_LOGIN_REDIRECT_URL!,
+  postLogoutRedirect: process.env.KINDE_POST_LOGOUT_REDIRECT_URL!,
 });
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
+  matcher: ['/dashboard/:path*', '/admin/:path*'], // protect these routes
 };

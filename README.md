@@ -24,7 +24,7 @@ AI-powered news aggregator and ticker delivering summaries through a culturally 
 - **MongoDB Atlas** (NoSQL database)
 - **OpenAI API** (GPT-4o / GPT-3.5-turbo)
 - **Vercel** (deployment & scheduling)
-- **Kinde** (auth & billing integration, optional)
+- **Kinde** (authentication & billing)
 
 ---
 
@@ -42,25 +42,33 @@ npm install
 ```
 
 ### 2. Configure Environment Variables
+
 Create a `.env.local` file in the project root with:
 
 ```env
-# MongoDB Atlas
+# MongoDB Atlas  
 MONGODB_URI="mongodb+srv://<user>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority"
 
-# OpenAI
+# OpenAI  
 OPENAI_API_KEY=<your-openai-api-key>
 
-# Base URL (for fetch in server components)
+# Base URL (for server fetches and redirects)  
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 
-# (Optional) Kinde authentication
-KINDE_CLIENT_ID=<your-kinde-client-id>
-KINDE_DOMAIN=<your-org.kinde.com>
-KINDE_REDIRECT_URI=http://localhost:3000/api/auth/callback
-KINDE_LOGOUT_URI=http://localhost:3000
+# Kinde Authentication  
+KINDE_DOMAIN=<your-org.kinde.com>  
+KINDE_CLIENT_ID=<your-kinde-client-id>  
+KINDE_CLIENT_SECRET=<your-kinde-client-secret>  
+KINDE_POST_LOGIN_REDIRECT_URL=http://localhost:3000/dashboard  
+KINDE_POST_LOGOUT_REDIRECT_URL=http://localhost:3000
+
+# (Optional) Public billing link  
 NEXT_PUBLIC_KINDE_BILLING_URL=https://<your-org>.kinde.com/billing
 ```
+
+### Polyfills
+
+If you see errors related to `expo-secure-store`, a shim is provided in `/polyfills/expo-secure-store.js`. No additional action is needed.
 
 ### 3. Run Locally
 ```bash
