@@ -9,12 +9,21 @@ interface KindeWrapperProps {
 }
 
 export default function KindeWrapper({ children }: KindeWrapperProps) {
+  const clientId = process.env.NEXT_PUBLIC_KINDE_CLIENT_ID!;
+  const domain = process.env.NEXT_PUBLIC_KINDE_DOMAIN!;
+  const redirectUri =
+    process.env.NEXT_PUBLIC_KINDE_POST_LOGIN_REDIRECT_URL ||
+    (typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : '');
+  const logoutUri =
+    process.env.NEXT_PUBLIC_KINDE_POST_LOGOUT_REDIRECT_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+
   return (
     <KindeProvider
-      clientId={process.env.NEXT_PUBLIC_KINDE_CLIENT_ID!}
-      domain={process.env.NEXT_PUBLIC_KINDE_DOMAIN!}
-      redirectUri={process.env.NEXT_PUBLIC_KINDE_POST_LOGIN_REDIRECT_URL!}
-      logoutUri={process.env.NEXT_PUBLIC_KINDE_POST_LOGOUT_REDIRECT_URL!}
+      clientId={clientId}
+      domain={domain}
+      redirectUri={redirectUri}
+      logoutUri={logoutUri}
     >
       {children}
     </KindeProvider>
