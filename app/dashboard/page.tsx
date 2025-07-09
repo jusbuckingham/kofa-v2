@@ -3,10 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
 type NewsItem = {
   title: string;
   summary: string;
-  link: string;
+  url: string;
   source: string;
   date: string;
   category: string;
@@ -38,15 +40,18 @@ export default function DashboardPage() {
       params.append('offset', offset.toString());
       params.append('limit', limit.toString());
 
-      const res = await fetch(`/api/news/get?${params.toString()}`);
-      const data = (await res.json()) as { news: NewsItem[]; hasMore: boolean };
+      const res = await fetch(
+        `${SITE_URL}/api/news/get?${params.toString()}`,
+        { cache: 'no-store' }
+      );
+      const { data: items, hasMore: more } = (await res.json()) as { data: NewsItem[]; hasMore: boolean };
 
       if (reset) {
-        setNewsItems(data.news);
+        setNewsItems(items);
       } else {
-        setNewsItems(prev => [...prev, ...data.news]);
+        setNewsItems(prev => [...prev, ...items]);
       }
-      setHasMore(data.hasMore);
+      setHasMore(more);
     } catch (error) {
       console.error('Failed to load news:', error);
     } finally {
@@ -140,7 +145,7 @@ export default function DashboardPage() {
       {/* News Items */}
       <div className="space-y-6">
         {newsItems.map(item => (
-          <article key={item.link} className="p-4 bg-white dark:bg-gray-800 rounded shadow">
+          <article key={item.url} className="p-4 bg-white dark:bg-gray-800 rounded shadow">
             <header className="flex justify-between items-start mb-2">
               <h2 className="text-xl font-semibold">{item.title}</h2>
               <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -150,7 +155,7 @@ export default function DashboardPage() {
             <p className="text-gray-700 dark:text-gray-300 mb-4">{item.summary}</p>
             <footer className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
               <span>{item.source}</span>
-              <Link href={item.link} target="_blank" className="underline">
+              <Link href={item.url} target="_blank" className="underline">
                 Read full article
               </Link>
             </footer>

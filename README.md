@@ -1,40 +1,35 @@
 # Kofa AI (kofa-v2)
 
-AI-powered news aggregator and ticker delivering summaries through a culturally conscious Black lens. Built with Next.js, Tailwind CSS, OpenAI, MongoDB, and a simple auth flow.
-
-🚀 Live demo: https://kofa.ai
+AI-powered news aggregator and ticker delivering summaries through a culturally conscious Black lens. Built with Next.js, Tailwind CSS, OpenAI, and MongoDB.
 
 ---
 
 ## ✨ Features
 
-- 📰 **Public News Ticker**: Continuously scrolling AI-summarized headlines.
-- 🔍 **Interactive Dashboard**: Client-side filters (category, keyword, date range, sort) and infinite scroll.
-- ⚙️ **Admin UI**: Trigger RSS fetch & summarization on demand; view last run timestamp.
-- 🔄 **Automated Fetch**: Schedule periodic RSS fetches (e.g., via Vercel Cron).
-- 🛡 **Protected Routes**: Login/logout flow for accessing `/dashboard` and `/admin`.
-- 🤖 **Summarization**: GPT-4o primary with GPT-3.5-turbo fallback and quota-aware handling.
+- 📰 **Public News Ticker**: Continuously scrolling AI-summarized headlines.  
+- 🔍 **Interactive Dashboard**: Client-side filters and infinite scroll (planned).  
+- ⚙️ **Admin UI**: Trigger RSS fetch and summarize on demand.  
+- 🕒 **Scheduled Fetch**: Hit `/api/fetch-news` via Vercel cron (optional).  
 
 ---
 
 ## 🧱 Tech Stack
 
-- **Next.js** (App Router, TypeScript)
-- **Tailwind CSS** (utility-first styling & animations)
-- **MongoDB Atlas** (NoSQL database)
-- **OpenAI API** (GPT-4o / GPT-3.5-turbo)
-- **Vercel** (deployment & scheduling)
-- **Kinde** (authentication & billing)
+- **Next.js** (App Router, TypeScript)  
+- **Tailwind CSS**  
+- **MongoDB Atlas**  
+- **OpenAI API**  
+- **Vercel**  
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js ≥16
-- npm or Yarn account for dependencies
-- MongoDB Atlas cluster
-- OpenAI API key
+- Node.js ≥16  
+- npm or Yarn account for dependencies  
+- MongoDB Atlas cluster  
+- OpenAI API key  
 
 ### 1. Install Dependencies
 ```bash
@@ -46,24 +41,9 @@ npm install
 Create a `.env.local` file in the project root with:
 
 ```env
-# MongoDB Atlas  
-MONGODB_URI="mongodb+srv://<user>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority"
-
-# OpenAI  
-OPENAI_API_KEY=<your-openai-api-key>
-
-# Base URL (for server fetches and redirects)  
+MONGODB_URI=<your MongoDB Atlas connection string>
+OPENAI_API_KEY=<your OpenAI API key>
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
-
-# Kinde Authentication  
-KINDE_DOMAIN=<your-org.kinde.com>  
-KINDE_CLIENT_ID=<your-kinde-client-id>  
-KINDE_CLIENT_SECRET=<your-kinde-client-secret>  
-KINDE_POST_LOGIN_REDIRECT_URL=http://localhost:3000/dashboard  
-KINDE_POST_LOGOUT_REDIRECT_URL=http://localhost:3000
-
-# (Optional) Public billing link  
-NEXT_PUBLIC_KINDE_BILLING_URL=https://<your-org>.kinde.com/billing
 ```
 
 ### Polyfills
@@ -78,37 +58,32 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 🛡 Protected Routes
-
-- **/dashboard**: Interactive news dashboard (login required)
-- **/admin**: Admin control panel for manual fetch and system monitoring
-
----
-
 ## 📦 Project Structure
 
 ```
 app/
-├── layout.tsx            # Global layout (header, ticker, logout)
-├── page.tsx              # Landing page hero
+├── layout.tsx
+├── page.tsx
 ├── dashboard/
-│   └── page.tsx          # Interactive dashboard (client)
+│   └── page.tsx
 ├── admin/
-│   └── page.tsx          # Admin UI
+│   └── page.tsx
 └── components/
-    ├── NewsTicker.tsx    # Scrolling ticker component
-    └── ...               # Other shared UI components
+    └── NewsTicker.tsx
+
 app/api/
 ├── fetch-news/
-│   └── route.ts          # RSS fetch & summarization
+│   └── route.ts
 └── news/
     └── get/
-        └── route.ts      # Fetch stored summaries
+        └── route.ts
+
 lib/
-├── mongodb.ts            # MongoDB connection helper
-└── summarize.ts          # OpenAI summarization with fallback
-middleware.ts             # Route protection logic
-styles/globals.css        # Global styles and custom animations
+├── mongodb.ts
+└── summarize.ts
+
+middleware.ts
+styles/globals.css
 ```
 
 ---

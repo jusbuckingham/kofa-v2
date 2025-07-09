@@ -3,22 +3,12 @@ import path from "path";
 import { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // In‐line both public AND server‐only Kinde settings
   env: {
-    // server‐side (for auth middleware):
-    KINDE_DOMAIN: process.env.KINDE_DOMAIN!,
-    KINDE_POST_LOGIN_REDIRECT_URL: process.env.KINDE_POST_LOGIN_REDIRECT_URL!,
-
-    // client‐side (for your wrapper component):
-    NEXT_PUBLIC_KINDE_CLIENT_ID: process.env.KINDE_CLIENT_ID!,
-    NEXT_PUBLIC_KINDE_DOMAIN: process.env.KINDE_DOMAIN!,
-    NEXT_PUBLIC_KINDE_POST_LOGIN_REDIRECT_URL:
-      process.env.KINDE_POST_LOGIN_REDIRECT_URL!,
-    NEXT_PUBLIC_KINDE_POST_LOGOUT_REDIRECT_URL:
-      process.env.KINDE_POST_LOGOUT_REDIRECT_URL!,
+    MONGODB_URI: process.env.MONGODB_URI!,
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL!,
   },
 
-  webpack: (config, { isServer }) => {
+  webpack: (config) => {
     // alias expo‐secure‐store to your polyfill
     config.resolve.alias = {
       ...(config.resolve.alias || {}),

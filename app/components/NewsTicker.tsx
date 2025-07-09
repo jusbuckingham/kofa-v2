@@ -14,9 +14,17 @@ export default function NewsTicker() {
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const res = await fetch('/api/news/get?limit=20');
+        const res = await fetch(`/api/news/get?limit=${20}`);
         const json = await res.json();
-        setNews(json.news || json);
+        // Normalize response shape to an array of items
+        const items = Array.isArray(json.news)
+          ? json.news
+          : Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json)
+          ? json
+          : [];
+        setNews(items);
       } catch (err) {
         console.error('Failed to load ticker news:', err);
       }
