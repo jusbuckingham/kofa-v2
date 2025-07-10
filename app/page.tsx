@@ -2,17 +2,24 @@ import StoryCard from './components/StoryCard';
 import Link from 'next/link';
 const NEWS_LIMIT = 5;
 
+interface NewsItem {
+  _id?: string;
+  title: string;
+  summary: string;
+  link: string;
+}
+
 export default async function HomePage() {
   // Build an absolute URL for the API endpoint
   const apiUrl = process.env.NEXT_PUBLIC_SITE_URL
     ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/news/get?limit=${NEWS_LIMIT}`
     : `http://localhost:3000/api/news/get?limit=${NEWS_LIMIT}`;
   const res = await fetch(apiUrl, { cache: 'no-store' });
-  let news: any[] = [];
+  let news: NewsItem[] = [];
   if (res.ok) {
-    const json = await res.json();
+    const data = (await res.json()) as NewsItem[] | { data?: NewsItem[] };
     // handle both array or { data: [] } response shapes
-    news = Array.isArray(json) ? json : json.data ?? [];
+    news = Array.isArray(data) ? data : data.data ?? [];
   } else {
     console.error('Fetch error:', res.status, await res.text());
   }
@@ -44,9 +51,9 @@ export default async function HomePage() {
             </h2>
             <div className="grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {(() => {
-                const stories = news.filter((item: any) => item.link);
+                const stories = news.filter(item => item.link);
                 return stories.length > 0 ? (
-                  stories.map((item: any) => (
+                  stories.map(item => (
                     <Link
                       key={item._id || item.link}
                       href={item.link!}
