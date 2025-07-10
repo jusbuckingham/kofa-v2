@@ -2,18 +2,12 @@ import StoryCard from './components/StoryCard';
 import Link from 'next/link';
 const NEWS_LIMIT = 5;
 
-// Base URL for server-side fetch of internal API
-const BASE_URL =
-  process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
 export default async function HomePage() {
-  // Fetch latest news from internal API
-  const res = await fetch(
-    `${BASE_URL}/api/news/get?limit=${NEWS_LIMIT}`,
-    { cache: 'no-store' }
-  );
+  // Build an absolute URL for the API endpoint
+  const apiUrl = process.env.NEXT_PUBLIC_SITE_URL
+    ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/news/get?limit=${NEWS_LIMIT}`
+    : `http://localhost:3000/api/news/get?limit=${NEWS_LIMIT}`;
+  const res = await fetch(apiUrl, { cache: 'no-store' });
   let news: any[] = [];
   if (res.ok) {
     const json = await res.json();

@@ -54,16 +54,16 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    loadNews(true);
+    loadNews();
   }, []);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
       <div className="space-y-6">
-        {items.map((item, idx) => (
+        {items.map((item) => (
           <StoryCard
-            key={item.url || idx}
+            key={item.url}
             title={item.title}
             summary={item.summary}
             url={item.url}
