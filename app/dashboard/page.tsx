@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import StoryCard from '../components/StoryCard';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
 type NewsItem = {
   title: string;
   summary: string;
@@ -30,7 +28,7 @@ export default function DashboardPage() {
     });
     try {
       const res = await fetch(
-        `${BASE_URL}/api/news/get?${params.toString()}`,
+        `/api/news/get?${params.toString()}`,
         { cache: 'no-store' }
       );
       if (!res.ok) {

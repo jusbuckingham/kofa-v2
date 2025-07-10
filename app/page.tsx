@@ -1,3 +1,4 @@
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 import StoryCard from './components/StoryCard';
 import Link from 'next/link';
 const NEWS_LIMIT = 5;
@@ -10,11 +11,7 @@ interface NewsItem {
 }
 
 export default async function HomePage() {
-  // Build an absolute URL for the API endpoint
-  const apiUrl = process.env.NEXT_PUBLIC_SITE_URL
-    ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/news/get?limit=${NEWS_LIMIT}`
-    : `http://localhost:3000/api/news/get?limit=${NEWS_LIMIT}`;
-  const res = await fetch(apiUrl, { cache: 'no-store' });
+  const res = await fetch(`${BASE_URL}/api/news/get?limit=${NEWS_LIMIT}`, { cache: 'no-store' });
   let news: NewsItem[] = [];
   if (res.ok) {
     const data = (await res.json()) as NewsItem[] | { data?: NewsItem[] };
