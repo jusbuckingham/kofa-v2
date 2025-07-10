@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import StoryCard from '../components/StoryCard';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
@@ -22,7 +22,7 @@ export default function DashboardPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const loadNews = async (reset = false) => {
+  const loadNews = useCallback(async (reset = false) => {
     setLoading(true);
     const params = new URLSearchParams({
       limit: String(LIMIT),
@@ -51,7 +51,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [offset]);
 
   useEffect(() => {
     loadNews();
