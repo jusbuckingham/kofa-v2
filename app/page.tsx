@@ -1,21 +1,27 @@
 import StoryCard from './components/StoryCard';
+import Link from 'next/link';
+const NEWS_LIMIT = 5;
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-const NEWS_LIMIT = 3;
+// Base URL for server-side fetch of internal API
+const BASE_URL =
+  process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 export default async function HomePage() {
-  // Fetch latest news from API
+  // Fetch latest news from internal API
   const res = await fetch(
-    `${SITE_URL}/api/news/get?limit=${NEWS_LIMIT}`,
+    `${BASE_URL}/api/news/get?limit=${NEWS_LIMIT}`,
     { cache: 'no-store' }
   );
-  const { data: news = [] } = await (async () => {
-    if (!res.ok) {
-      console.error('Fetch error:', res.status, await res.text());
-      return { data: [] };
-    }
-    return res.json();
-  })();
+  let news: any[] = [];
+  if (res.ok) {
+    const json = await res.json();
+    // handle both array or { data: [] } response shapes
+    news = Array.isArray(json) ? json : json.data ?? [];
+  } else {
+    console.error('Fetch error:', res.status, await res.text());
+  }
 
   return (
     <>
@@ -40,17 +46,32 @@ export default async function HomePage() {
         >
           <div className="max-w-6xl mx-auto px-4 space-y-8">
             <h2 className="text-3xl font-semibold text-black text-center">
-              Today’s Top Stories (Sample)
+              Today’s Top Stories
             </h2>
             <div className="grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {news.map((item: any) => (
-                <StoryCard
-                  key={item.id || item.url}
-                  title={item.title}
-                  summary={item.summary}
-                  url={item.url}
-                />
-              ))}
+              {(() => {
+                const stories = news.filter((item: any) => item.link);
+                return stories.length > 0 ? (
+                  stories.map((item: any) => (
+                    <Link
+                      key={item._id || item.link}
+                      href={item.link!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                    >
+                      <StoryCard
+                        title={item.title}
+                        summary={item.summary}
+                      />
+                    </Link>
+                  ))
+                ) : (
+                  <p className="col-span-full text-center text-gray-500">
+                    No stories available.
+                  </p>
+                );
+              })()}
             </div>
           </div>
         </section>
