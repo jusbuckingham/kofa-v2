@@ -11,9 +11,9 @@ export async function GET() {
   return NextResponse.json({ data: favorites });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const userEmail = "test@example.com";
-  const { story } = (await req.json()) as { story: NewsStory };
+  const { story } = (await request.json()) as { story: NewsStory };
 
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
@@ -22,9 +22,9 @@ export async function POST() {
   return NextResponse.json({ success: true });
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   const userEmail = "test@example.com";
-  const { storyId } = (await req.json()) as { storyId: string | number };
+  const { storyId } = (await request.json()) as { storyId: string | number };
 
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
