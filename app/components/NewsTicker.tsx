@@ -1,61 +1,51 @@
-'use client';
+"use client";
+import React, { useState } from "react";
+import type { NewsStory } from "../types";
+import StoryCard from "./StoryCard";
 
-import { useEffect, useState } from 'react';
-
-interface NewsItem {
-  title: string;
-  summary: string;
-  link: string;
+interface NewsTickerProps {
+  initialStories?: NewsStory[];
 }
 
-export default function NewsTicker() {
-  const [news, setNews] = useState<NewsItem[]>([]);
+export default function NewsTicker({ initialStories = [] }: NewsTickerProps) {
+  const [stories, setStories] = useState<NewsStory[]>(initialStories);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const res = await fetch(`/api/news/get?limit=${20}`);
-        const json = await res.json();
-        // Normalize response shape to an array of items
-        const items = Array.isArray(json.news)
-          ? json.news
-          : Array.isArray(json.data)
-          ? json.data
-          : Array.isArray(json)
-          ? json
-          : [];
-        setNews(items);
-      } catch (err) {
-        console.error('Failed to load ticker news:', err);
-      }
-    };
-
-    fetchNews();
-    const interval = setInterval(fetchNews, 300000); // Refresh every 5 minutes
-    return () => clearInterval(interval);
-  }, []);
+  const loadMore = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/news?page=${page + 1}`);
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const data: NewsStory[] = await res.json();
+      setStories(prev => [...prev, ...data]);
+      setPage(prev => prev + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="relative bg-black text-yellow-400 overflow-hidden h-10">
-      {/* Left and right fade overlays */}
-      <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-black to-transparent pointer-events-none" />
-      <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-black to-transparent pointer-events-none" />
-
-      {/* Scrolling container */}
-      <div className="flex items-center whitespace-nowrap animate-marquee gap-12 px-8 hover:[animation-play-state:paused]">
-        {news.map((item, i) => (
-          <a
-            key={i}
-            href={item.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={item.summary}
-            className="inline-block flex-none text-sm px-4 hover:underline"
-          >
-            <strong>{item.title}</strong>
-          </a>
+    <>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {stories.map((s, i) => (
+          <StoryCard key={s.id ?? i} story={s} />
         ))}
       </div>
-    </div>
+      {error && <p className="text-red-500">{error}</p>}
+      <div className="mt-6 flex justify-center">
+        <button
+          onClick={loadMore}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          {loading ? "Loading..." : "Load more"}
+        </button>
+      </div>
+    </>
   );
 }

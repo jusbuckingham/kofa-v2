@@ -1,33 +1,33 @@
 'use client';
 
 import Link from 'next/link';
+import type { NewsStory } from "../types";
 
 interface StoryCardProps {
-  title: string;
-  summary: string;
-  url?: string;
+  story: NewsStory;
 }
 
-export default function StoryCard({ title, summary, url }: StoryCardProps) {
-  const cardClasses = "block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden";
-
-  const cardContent = (
-    <div>
-      <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">{title}</h3>
-      <p className="text-gray-700 dark:text-gray-300 text-sm mb-4">{summary}</p>
-      {url && (
-        <span className="text-blue-500 hover:underline text-sm">Read more →</span>
-      )}
-    </div>
-  );
-
-  if (url) {
+export default function StoryCard({ story }: StoryCardProps) {
+  // Render a real link (new tab) if we have a URL
+  if (story.url) {
     return (
-      <Link href={url} target="_blank" rel="noopener noreferrer" className={cardClasses}>
-        {cardContent}
+      <Link
+        href={story.url}
+        className="block w-full max-w-md p-6 border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-colors hover:border-gray-300"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
+        {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
       </Link>
     );
   }
 
-  return <div className={cardClasses}>{cardContent}</div>;
+  // Otherwise render a static card
+  return (
+    <div className="block w-full max-w-md p-6 border border-gray-200 rounded-lg shadow-sm">
+      <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
+      {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
+    </div>
+  );
 }

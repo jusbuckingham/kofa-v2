@@ -5,9 +5,9 @@ import NewsTicker from './NewsTicker';
 
 export default function Header() {
   return (
-    <header className="flex flex-col w-full">
+    <header className="w-full">
       {/* Top gradient bar */}
-      <div className="flex justify-between items-center bg-gradient-to-r from-yellow-500 via-pink-500 to-red-500 py-3 px-6">
+      <div className="bg-gradient-to-r from-yellow-500 via-pink-500 to-red-500 py-3 px-6 mb-2">
         <div className="flex items-center space-x-4">
           <Image
             src="/images/image.png"
@@ -20,7 +20,7 @@ export default function Header() {
       </div>
 
       {/* News ticker below */}
-      <div className="w-full bg-black">
+      <div className="w-full bg-black px-6">
         <NewsTicker />
       </div>
     </header>

@@ -1,6 +1,5 @@
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-import StoryCard from './components/StoryCard';
-import Link from 'next/link';
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL!;
+import NewsList from './components/NewsList';
 const NEWS_LIMIT = 5;
 
 interface NewsItem {
@@ -46,31 +45,7 @@ export default async function HomePage() {
             <h2 className="text-3xl font-semibold text-black text-center">
               Today’s Top Stories
             </h2>
-            <div className="grid gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {(() => {
-                const stories = news.filter(item => item.link);
-                return stories.length > 0 ? (
-                  stories.map(item => (
-                    <Link
-                      key={item._id || item.link}
-                      href={item.link!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block"
-                    >
-                      <StoryCard
-                        title={item.title}
-                        summary={item.summary}
-                      />
-                    </Link>
-                  ))
-                ) : (
-                  <p className="col-span-full text-center text-gray-500">
-                    No stories available.
-                  </p>
-                );
-              })()}
-            </div>
+            <NewsList initialStories={news} />
           </div>
         </section>
       </main>
