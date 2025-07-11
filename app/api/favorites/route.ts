@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import type { NewsStory } from "@/app/types";
 
-export async function GET(req: Request) {
+export async function GET() {
   // Temporary placeholder until you add real auth
   const userEmail = "test@example.com";
 
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ data: favorites });
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const userEmail = "test@example.com";
   const { story } = (await req.json()) as { story: NewsStory };
 
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ success: true });
 }
 
-export async function DELETE(req: Request) {
+export async function DELETE() {
   const userEmail = "test@example.com";
   const { storyId } = (await req.json()) as { storyId: string | number };
 
