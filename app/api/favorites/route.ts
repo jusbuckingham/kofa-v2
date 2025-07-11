@@ -3,9 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import type { NewsStory } from "@/app/types";
 
 export async function GET() {
-  // Temporary placeholder until you add real auth
-  const userEmail = "test@example.com";
-
+  const userEmail = "test@example.com"; // placeholder until auth
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection("favorites");
