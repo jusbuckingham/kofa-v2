@@ -1,15 +1,18 @@
 # Kofa AI (kofa-v2)
 
-AI-powered news aggregator and ticker delivering summaries through a culturally conscious Black lens. Built with Next.js, Tailwind CSS, OpenAI, and MongoDB.
+AI-powered news aggregator and ticker delivering summaries through a culturally conscious Black lens, with user authentication and metered access.
 
 ---
 
 ## ✨ Features
 
 - 📰 **Public News Ticker**: Continuously scrolling AI-summarized headlines.  
-- 🔍 **Interactive Dashboard**: Client-side filters and infinite scroll (planned).  
+- 🔒 **User Accounts & Authentication**: Email-based sign-in via NextAuth.  
+- ⭐ **Saved Stories / Favorites**: Users can save and unsave articles in their dashboard.  
+- ⏳ **Metered Paywall**: Free users read up to 3 stories per day; Pro subscribers get unlimited access.  
+- 💳 **Subscription Billing**: Stripe integration for paid subscriptions and automated webhook handling.  
 - ⚙️ **Admin UI**: Trigger RSS fetch and summarize on demand.  
-- 🕒 **Scheduled Fetch**: Hit `/api/fetch-news` via Vercel cron (optional).  
+- 🕒 **Scheduled Fetch**: Vercel Cron hit `/api/fetch-news` periodically (optional).  
 
 ---
 
@@ -43,7 +46,12 @@ Create a `.env.local` file in the project root with:
 ```env
 MONGODB_URI=<your MongoDB Atlas connection string>
 OPENAI_API_KEY=<your OpenAI API key>
-NEXT_PUBLIC_BASE_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=<your NextAuth secret>
+STRIPE_SECRET_KEY=<your Stripe secret key>
+STRIPE_PRO_PRICE_ID=<your Stripe price ID>
+STRIPE_WEBHOOK_SECRET=<your Stripe webhook secret>
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 ### Polyfills
@@ -72,11 +80,14 @@ app/
     └── NewsTicker.tsx
 
 app/api/
-├── fetch-news/
-│   └── route.ts
-└── news/
-    └── get/
-        └── route.ts
+├── auth/[...nextauth]/route.ts
+├── stripe/
+│   ├── checkout/route.ts
+│   └── webhooks/route.ts
+├── user/
+│   └── read/route.ts
+├── favorites/route.ts
+└── user/metadata/route.ts
 
 lib/
 ├── mongodb.ts
@@ -94,6 +105,14 @@ styles/globals.css
 - `npm run build` – Build for production  
 - `npm run start` – Start the production server  
 - (Optional) Configure Vercel Cron to hit `/api/fetch-news` periodically
+
+---
+
+## 🛠 Development Tips
+
+- Use `ngrok` or Vercel Preview Deployments to test Stripe webhooks locally.  
+- Monitor read-quota events by inspecting `/api/user/read` responses.  
+- Customize your MQTT fetch schedule via the Vercel Cron configuration.  
 
 ---
 

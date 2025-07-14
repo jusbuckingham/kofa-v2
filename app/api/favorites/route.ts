@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import type { NewsStory } from "@/app/types";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function GET() {
-  const userEmail = "test@example.com"; // placeholder until auth
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail = session.user.email;
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection("favorites");
@@ -12,23 +18,43 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const userEmail = "test@example.com";
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail = session.user.email;
   const { story } = (await request.json()) as { story: NewsStory };
 
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection("favorites");
-  await coll.insertOne({ userEmail, story, savedAt: new Date() });
+  await coll.insertOne({ userEmail, story, savedAt: new Date().toISOString() });
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE(request: Request) {
-  const userEmail = "test@example.com";
-  const { storyId } = (await request.json()) as { storyId: string | number };
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail = session.user.email;
+  // Try to read a storyId; if none, clear all
+  let body: { storyId?: string | number } = {};
+  try {
+    body = await request.json();
+  } catch {
+    /* no JSON body */
+  }
 
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection("favorites");
-  await coll.deleteOne({ userEmail, "story.id": storyId });
+
+  if (body.storyId !== undefined) {
+    await coll.deleteOne({ userEmail, "story.id": body.storyId });
+  } else {
+    await coll.deleteMany({ userEmail });
+  }
+
   return NextResponse.json({ success: true });
 }

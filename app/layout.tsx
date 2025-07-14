@@ -1,5 +1,6 @@
 import '../styles/globals.css';
 import Header from './components/Header';
+import Providers from "./providers";
 
 export const metadata = {
   title: 'Kofa AI',
@@ -14,10 +15,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-gray-100 dark:bg-gray-900">
-        <Header />
-        <div className="max-w-5xl mx-auto px-4 py-8">
-          {children}
-        </div>
+        <Providers>
+          <Header />
+          <div className="max-w-5xl mx-auto px-4 py-8">
+            {children}
+          </div>
+        </Providers>
       </body>
     </html>
   );

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 interface UserDoc {
   _id?: ObjectId;
@@ -10,7 +12,11 @@ interface UserDoc {
 }
 
 export async function GET() {
-  const userEmail = "test@example.com"; // placeholder
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail = session.user.email;
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserDoc>("users");
@@ -31,7 +37,11 @@ export async function GET() {
 
 // NEW: bump totalReads by 1 and return updated stats
 export async function POST() {
-  const userEmail = "test@example.com"; // placeholder
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userEmail = session.user.email;
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserDoc>("users");

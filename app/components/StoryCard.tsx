@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import type { NewsStory } from "../types";
 
@@ -9,22 +9,6 @@ interface StoryCardProps {
 }
 
 export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
-  // Increment read count and notify dashboard
-  const incrementRead = async () => {
-    try {
-      const res = await fetch("/api/user/metadata", { method: "POST" });
-      if (res.ok) {
-        const json = await res.json();
-        // emit a global event so DashboardPage can update
-        window.dispatchEvent(new CustomEvent("metadataUpdate", {
-          detail: { totalReads: json.totalReads }
-        }));
-      }
-    } catch (e) {
-      console.error("Failed to increment read count", e);
-    }
-  };
-
   const saveStory = async () => {
     if (isSaved) return;
     try {
@@ -38,6 +22,31 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
     }
   };
 
+  const [showPaywall, setShowPaywall] = useState(false);
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/user/read", { method: "POST" });
+      const { remaining, subscriptionStatus } = await res.json();
+      if (subscriptionStatus === "active" || remaining > 0) {
+        window.open(story.url, "_blank");
+        // update metadata
+        const metaRes = await fetch("/api/user/metadata", { method: "POST" });
+        if (metaRes.ok) {
+          const json = await metaRes.json();
+          window.dispatchEvent(new CustomEvent("metadataUpdate", {
+            detail: { totalReads: json.totalReads }
+          }));
+        }
+      } else {
+        setShowPaywall(true);
+      }
+    } catch (err) {
+      console.error("Error checking read quota", err);
+    }
+  };
+
   if (story.url) {
     return (
       <div className="block w-full max-w-md p-6 border rounded-lg shadow-sm">
@@ -46,11 +55,22 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
           target="_blank"
           rel="noopener noreferrer"
           className="block"
-          onClick={incrementRead}
+          onClick={handleClick}
         >
           <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
           {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
         </Link>
+        {showPaywall && (
+          <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 rounded">
+            <p>You’ve reached your free stories limit for today.</p>
+            <button
+              onClick={() => window.location.href = "/pricing"}
+              className="mt-2 px-3 py-1 bg-blue-600 text-white rounded"
+            >
+              Upgrade to Pro
+            </button>
+          </div>
+        )}
         <button
           onClick={saveStory}
           disabled={isSaved}
@@ -70,6 +90,25 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
     <div className="block w-full max-w-md p-6 border rounded-lg shadow-sm">
       <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
       {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
+      {story.url && (
+        <button
+          onClick={handleClick}
+          className="mt-4 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Read
+        </button>
+      )}
+      {showPaywall && (
+        <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 rounded">
+          <p>You’ve reached your free stories limit for today.</p>
+          <button
+            onClick={() => window.location.href = "/pricing"}
+            className="mt-2 px-3 py-1 bg-blue-600 text-white rounded"
+          >
+            Upgrade to Pro
+          </button>
+        </div>
+      )}
       <button
         onClick={saveStory}
         disabled={isSaved}
