@@ -13,6 +13,13 @@ interface Favorite {
 export default function DashboardPage() {
   // Remove required: true to prevent redirect loop
   const { data: session, status } = useSession();
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [lastLogin, setLastLogin] = useState<string>("");
+  const [totalReads, setTotalReads] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [clearLoading, setClearLoading] = useState<boolean>(false);
+
   if (status === "loading") return <p>Loading...</p>;
   if (!session) {
     return (
@@ -27,13 +34,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
-  const [lastLogin, setLastLogin] = useState<string>("");
-  const [totalReads, setTotalReads] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [clearLoading, setClearLoading] = useState<boolean>(false);
 
   // Helper for relative time
   const timeSince = (dateString: string) => {

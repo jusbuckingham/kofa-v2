@@ -25,9 +25,10 @@ export async function POST(request: Request) {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-  } catch (err: any) {
-    console.error("Webhook signature verification failed:", err.message);
-    return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Webhook signature verification failed:", message);
+    return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
   }
 
   // 3. Connect to Mongo and grab the users collection

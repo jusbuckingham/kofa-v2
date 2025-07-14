@@ -8,7 +8,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2022-11-15",
 });
 
-export async function POST(request: Request) {
+export async function POST(_request: Request) {
   // 1. Authenticate the user
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const users = db.collection("users");
-  let user = await users.findOne({ userEmail });
+  const user = await users.findOne({ userEmail });
   let customerId = user?.stripeCustomerId as string | undefined;
 
   if (!customerId) {
