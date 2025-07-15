@@ -67,6 +67,7 @@ export const authOptions: NextAuthOptions = {
       session: Session;
       token: JWT;
     }) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (session.user as any).subscriptionStatus = token.subscriptionStatus as string;
       return session;
     },

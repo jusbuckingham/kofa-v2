@@ -20,6 +20,33 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [clearLoading, setClearLoading] = useState<boolean>(false);
 
+  // Fetch data
+  useEffect(() => {
+    if (!session) return;
+    const fetchData = async () => {
+      try {
+        const [favRes, metaRes] = await Promise.all([
+          fetch("/api/favorites"),
+          fetch("/api/user/metadata"),
+        ]);
+        if (!favRes.ok) throw new Error("Failed to load saved stories");
+        if (!metaRes.ok) throw new Error("Failed to load user metadata");
+
+        const favJson = await favRes.json();
+        setFavorites(favJson.data);
+
+        const metaJson = await metaRes.json();
+        setLastLogin(metaJson.lastLogin);
+        setTotalReads(metaJson.totalReads);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [session]);
+
   if (status === "loading") return <p>Loading...</p>;
   if (!session) {
     return (
@@ -48,33 +75,6 @@ export default function DashboardPage() {
     if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
     return `${seconds} second${seconds !== 1 ? "s" : ""} ago`;
   };
-
-  // Fetch data
-  useEffect(() => {
-    if (!session) return;
-    const fetchData = async () => {
-      try {
-        const [favRes, metaRes] = await Promise.all([
-          fetch("/api/favorites"),
-          fetch("/api/user/metadata"),
-        ]);
-        if (!favRes.ok) throw new Error("Failed to load saved stories");
-        if (!metaRes.ok) throw new Error("Failed to load user metadata");
-
-        const favJson = await favRes.json();
-        setFavorites(favJson.data);
-
-        const metaJson = await metaRes.json();
-        setLastLogin(metaJson.lastLogin);
-        setTotalReads(metaJson.totalReads);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [session]);
 
   const removeStory = async (storyId: string | number) => {
     try {

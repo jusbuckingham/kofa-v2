@@ -8,7 +8,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2022-11-15",
 });
 
-export async function POST(_request: Request) {
+export async function POST() {
   // 1. Authenticate the user
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
