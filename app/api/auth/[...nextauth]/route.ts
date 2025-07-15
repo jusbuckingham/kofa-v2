@@ -7,7 +7,7 @@ import clientPromise from "@/lib/mongodb";
 import type { NextAuthOptions, Session, User } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   adapter: MongoDBAdapter(clientPromise),
   providers: [
     CredentialsProvider({
