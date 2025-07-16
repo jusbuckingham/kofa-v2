@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSession, signIn } from "next-auth/react";
 import type { NewsStory } from "../types";
 import StoryCard from "../components/StoryCard";
@@ -20,32 +20,61 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [clearLoading, setClearLoading] = useState<boolean>(false);
 
-  // Fetch data
+  const fetchData = useCallback(async () => {
+    try {
+      const [favRes, metaRes] = await Promise.all([
+        fetch("/api/favorites"),
+        fetch("/api/user/metadata"),
+      ]);
+      if (!favRes.ok) throw new Error("Failed to load saved stories");
+      if (!metaRes.ok) throw new Error("Failed to load user metadata");
+
+      const favJson = await favRes.json();
+      setFavorites(favJson.data);
+
+      const metaJson = await metaRes.json();
+      setLastLogin(metaJson.lastLogin);
+      setTotalReads(metaJson.totalReads);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!session) return;
-    const fetchData = async () => {
-      try {
-        const [favRes, metaRes] = await Promise.all([
-          fetch("/api/favorites"),
-          fetch("/api/user/metadata"),
-        ]);
-        if (!favRes.ok) throw new Error("Failed to load saved stories");
-        if (!metaRes.ok) throw new Error("Failed to load user metadata");
-
-        const favJson = await favRes.json();
-        setFavorites(favJson.data);
-
-        const metaJson = await metaRes.json();
-        setLastLogin(metaJson.lastLogin);
-        setTotalReads(metaJson.totalReads);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
-  }, [session]);
+  }, [session, fetchData]);
+
+  // Listen for read-count updates from StoryCard clicks
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      setLastLogin(e.detail.lastLogin);
+      setTotalReads(e.detail.totalReads);
+    };
+    window.addEventListener("metadataUpdated", handler as EventListener);
+    return () => {
+      window.removeEventListener("metadataUpdated", handler as EventListener);
+    };
+  }, []);
+
+  const handleRemove = useCallback(async (storyId: string | number) => {
+    // Optimistically remove
+    setFavorites((prev) => prev.filter((f) => f.story.id !== storyId));
+    try {
+      const res = await fetch("/api/favorites", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyId }),
+      });
+      if (!res.ok) throw new Error("Failed to remove story");
+    } catch (err) {
+      console.error(err);
+      // Re-fetch on error
+      fetchData();
+    }
+  }, [fetchData]);
 
   if (status === "loading") return <p>Loading...</p>;
   if (!session) {
@@ -74,20 +103,6 @@ export default function DashboardPage() {
     if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
     if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
     return `${seconds} second${seconds !== 1 ? "s" : ""} ago`;
-  };
-
-  const removeStory = async (storyId: string | number) => {
-    try {
-      const res = await fetch("/api/favorites", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storyId }),
-      });
-      if (!res.ok) throw new Error("Failed to remove story");
-      setFavorites((prev) => prev.filter((f) => f.story.id !== storyId));
-    } catch (err) {
-      console.error(err);
-    }
   };
 
   if (loading) return <p>Loading dashboard...</p>;
@@ -151,7 +166,7 @@ export default function DashboardPage() {
                   Saved {timeSince(fav.savedAt)}
                 </p>
                 <button
-                  onClick={() => removeStory(fav.story.id)}
+                  onClick={() => handleRemove(fav.story.id)}
                   className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
                 >
                   Remove

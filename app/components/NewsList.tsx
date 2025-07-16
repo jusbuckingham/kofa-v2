@@ -1,30 +1,23 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import type { NewsStory } from "../types";
 import StoryCard from "./StoryCard";
 
 interface NewsListProps {
   initialStories?: NewsStory[];
+  savedIds: Set<string | number>;
 }
 
-export default function NewsList({ initialStories = [] }: NewsListProps) {
+export default function NewsList({
+  initialStories = [],
+  savedIds,
+}: NewsListProps) {
   const [stories, setStories] = useState<NewsStory[]>(initialStories);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [totalPages, setTotalPages] = useState<number | null>(null);
-  const [savedIds, setSavedIds] = useState<(string | number)[]>([]);
-
-  useEffect(() => {
-    fetch("/api/favorites")
-      .then(res => res.json())
-      .then(json => {
-        const ids = (json.data as { story: NewsStory }[]).map(f => f.story.id);
-        setSavedIds(ids);
-      })
-      .catch(() => {});
-  }, []);
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
@@ -71,7 +64,7 @@ export default function NewsList({ initialStories = [] }: NewsListProps) {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {stories.map((story, idx) => (
           <div key={story.id ?? idx} className="fade-in">
-            <StoryCard story={story} isSaved={savedIds.includes(story.id)} />
+            <StoryCard story={story} isSaved={savedIds.has(story.id)} />
           </div>
         ))}
       </div>

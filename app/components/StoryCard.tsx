@@ -8,9 +8,16 @@ interface StoryCardProps {
   isSaved?: boolean;
 }
 
-export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
+export default function StoryCard({
+  story,
+  isSaved = false,
+}: StoryCardProps) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
+
   const saveStory = async () => {
-    if (isSaved) return;
+    if (isSaved || isSaving) return;
+    setIsSaving(true);
     try {
       await fetch("/api/favorites", {
         method: "POST",
@@ -19,10 +26,10 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
       });
     } catch (err) {
       console.error("Failed to save story:", err);
+    } finally {
+      setIsSaving(false);
     }
   };
-
-  const [showPaywall, setShowPaywall] = useState(false);
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -31,13 +38,17 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
       const { remaining, subscriptionStatus } = await res.json();
       if (subscriptionStatus === "active" || remaining > 0) {
         window.open(story.url, "_blank");
-        // update metadata
         const metaRes = await fetch("/api/user/metadata", { method: "POST" });
         if (metaRes.ok) {
           const json = await metaRes.json();
-          window.dispatchEvent(new CustomEvent("metadataUpdate", {
-            detail: { totalReads: json.totalReads }
-          }));
+          window.dispatchEvent(
+            new CustomEvent("metadataUpdated", {
+              detail: {
+                totalReads: json.totalReads,
+                lastLogin: json.lastLogin,
+              },
+            })
+          );
         }
       } else {
         setShowPaywall(true);
@@ -47,9 +58,9 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
     }
   };
 
-  if (story.url) {
-    return (
-      <div className="block w-full max-w-md p-6 border rounded-lg shadow-sm">
+  return (
+    <div className="block w-full max-w-md p-6 border rounded-lg shadow-sm transition-opacity duration-500 ease-in fade-in">
+      {story.url ? (
         <Link
           href={story.url}
           target="_blank"
@@ -58,67 +69,76 @@ export default function StoryCard({ story, isSaved = false }: StoryCardProps) {
           onClick={handleClick}
         >
           <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
-          {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
+          {story.description && (
+            <p className="text-sm text-gray-600 line-clamp-3">
+              {story.description}
+            </p>
+          )}
         </Link>
-        {showPaywall && (
-          <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 rounded">
-            <p>You’ve reached your free stories limit for today.</p>
-            <button
-              onClick={() => window.location.href = "/pricing"}
-              className="mt-2 px-3 py-1 bg-blue-600 text-white rounded"
-            >
-              Upgrade to Pro
-            </button>
-          </div>
-        )}
-        <button
-          onClick={saveStory}
-          disabled={isSaved}
-          className={`mt-4 px-3 py-1 rounded ${
-            isSaved
-              ? "bg-gray-400 text-white cursor-default"
-              : "bg-green-500 text-white hover:bg-green-600"
-          }`}
-        >
-          {isSaved ? "Saved" : "Save"}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="block w-full max-w-md p-6 border rounded-lg shadow-sm">
-      <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
-      {story.description && <p className="text-sm text-gray-600 line-clamp-3">{story.description}</p>}
-      {story.url && (
-        <button
-          onClick={handleClick}
-          className="mt-4 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Read
-        </button>
+      ) : (
+        <>
+          <h2 className="text-xl font-semibold mb-2">{story.title}</h2>
+          {story.description && (
+            <p className="text-sm text-gray-600 line-clamp-3">
+              {story.description}
+            </p>
+          )}
+        </>
       )}
+
       {showPaywall && (
         <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 rounded">
           <p>You’ve reached your free stories limit for today.</p>
           <button
-            onClick={() => window.location.href = "/pricing"}
+            onClick={() => (window.location.href = "/pricing")}
             className="mt-2 px-3 py-1 bg-blue-600 text-white rounded"
           >
             Upgrade to Pro
           </button>
         </div>
       )}
+
+      {story.url && !showPaywall && (
+        <button
+          onClick={handleClick}
+          className="mt-4 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center justify-center"
+        >
+          Read
+        </button>
+      )}
+
       <button
         onClick={saveStory}
-        disabled={isSaved}
-        className={`mt-4 px-3 py-1 rounded ${
+        disabled={isSaved || isSaving}
+        className={`mt-4 px-3 py-1 rounded flex items-center justify-center ${
           isSaved
             ? "bg-gray-400 text-white cursor-default"
             : "bg-green-500 text-white hover:bg-green-600"
         }`}
       >
-        {isSaved ? "Saved" : "Save"}
+        {isSaving && (
+          <svg
+            className="animate-spin h-4 w-4 mr-2"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"
+            />
+          </svg>
+        )}
+        {isSaved ? "Saved" : isSaving ? "Saving..." : "Save"}
       </button>
     </div>
   );

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 interface UserDoc {
   _id?: ObjectId;
@@ -46,15 +46,15 @@ export async function POST() {
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserDoc>("users");
 
-  const updatedUser = await coll.findOneAndUpdate(
+  const result = await coll.findOneAndUpdate(
     { userEmail },
     { $inc: { totalReads: 1 } },
     { returnDocument: "after", upsert: true }
   );
-  if (!updatedUser) {
+  if (!result.value) {
     throw new Error("Failed to update user metadata");
   }
-  const updated = updatedUser;
+  const updated = result.value;
 
   return NextResponse.json({
     lastLogin: updated.lastLogin,

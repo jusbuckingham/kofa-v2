@@ -7,6 +7,10 @@ import { useSession, signOut } from "next-auth/react";
 
 export default function Header() {
   const { data: session } = useSession();
+  const subscriptionStatus =
+    session?.user && "subscriptionStatus" in session.user
+      ? (session.user as any).subscriptionStatus
+      : "free";
 
   return (
     <header className="bg-gradient-to-r from-yellow-500 via-pink-500 to-red-500 py-3 px-6 mb-2 flex items-center justify-between">
@@ -33,17 +37,16 @@ export default function Header() {
             <span className="text-sm text-white">{session.user.email}</span>
             <span
               className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                session.user.subscriptionStatus === "active"
+                subscriptionStatus === "active"
                   ? "bg-green-100 text-green-800"
                   : "bg-yellow-100 text-yellow-800"
               }`}
             >
-              {session.user.subscriptionStatus === "active"
-                ? "Pro Member"
-                : "Free Tier"}
+              {subscriptionStatus === "active" ? "Pro Member" : "Free Tier"}
             </span>
             <button
               onClick={() => signOut()}
+              aria-label="Sign out"
               className="text-sm text-red-200 hover:underline"
             >
               Sign Out
@@ -52,5 +55,5 @@ export default function Header() {
         )}
       </nav>
     </header>
-);
+  );
 }
