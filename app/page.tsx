@@ -6,7 +6,9 @@ const NEWS_LIMIT = 5;
 
 export default async function HomePage() {
   // Determine absolute base URL
-  const host = headers().get("host") ?? "";
+  // Await the headers object before accessing
+  const hdrs = await headers();
+  const host = hdrs.get("host") ?? "";
   const protocol = host.startsWith("localhost") ? "http" : "https";
   const baseUrl = `${protocol}://${host}`;
 

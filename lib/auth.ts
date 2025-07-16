@@ -1,5 +1,4 @@
 import type { NextAuthOptions } from "next-auth";
-import NextAuth from "next-auth";
 import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";

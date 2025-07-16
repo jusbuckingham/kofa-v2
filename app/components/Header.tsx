@@ -5,11 +5,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 
+interface UserWithSubscription {
+  subscriptionStatus?: string;
+}
+
 export default function Header() {
   const { data: session } = useSession();
   const subscriptionStatus =
     session?.user && "subscriptionStatus" in session.user
-      ? (session.user as any).subscriptionStatus
+      ? (session.user as UserWithSubscription).subscriptionStatus ?? "free"
       : "free";
 
   return (
