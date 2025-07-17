@@ -35,7 +35,7 @@ export default async function HomePage() {
   return (
     <main>
       <section id="stories" className="max-w-5xl mx-auto p-4">
-        <h2 className="text-2xl font-bold mb-4">Today's Top Stories</h2>
+        <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Stories</h2>
         <NewsList initialStories={initialStories} savedIds={savedIds} />
       </section>
     </main>

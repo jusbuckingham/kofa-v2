@@ -13,7 +13,7 @@ export default function StoryCard({
   isSaved = false,
 }: StoryCardProps) {
   const [isSaving, setIsSaving] = useState(false);
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [showPaywall] = useState(false);
   const [isReading, setIsReading] = useState(false);
 
   const saveStory = async () => {
