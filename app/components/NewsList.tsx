@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import type { NewsStory } from "../types";
 import StoryCard from "./StoryCard";

@@ -1,6 +1,8 @@
-# Kofa AI (kofa-v2)
 
-AI-powered news aggregator and ticker delivering summaries through a culturally conscious Black lens, with user authentication and metered access.
+# Kofa
+
+**Black culturally conscious summaries of the latest news.** Kofa delivers concise, community-centered news digests so you can stay informed without sifting through noise.
+
 
 ---
 

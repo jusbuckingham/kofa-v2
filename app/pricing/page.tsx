@@ -1,49 +1,58 @@
+// app/pricing/page.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import PricingCard, { Plan } from "../components/PricingCard";
 
 export default function PricingPage() {
-  const handleSubscribe = () => {
-    // Redirect to your Checkout API route
-    window.location.href = "/api/stripe/checkout";
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCheckout = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const { url } = (await res.json()) as { url: string };
+      if (url) {
+        window.location.href = url;
+      } else {
+        console.error("No checkout URL returned");
+      }
+    } catch (err) {
+      console.error("Checkout error", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const plans: Plan[] = [
+    {
+      name: "Free Tier",
+      price: "3 free stories per day",
+      features: [
+        "Daily limit: 3 articles",
+        "Access to summaries",
+        "No subscription required",
+      ],
+      buttonText: "Current Plan",
+      disabled: true,
+    },
+    {
+      name: "Pro Tier",
+      price: "$9.99 / month",
+      features: ["Unlimited stories", "Priority support", "Cancel anytime"],
+      buttonText: isLoading ? "Loading..." : "Subscribe Now",
+      disabled: isLoading,
+      onClick: handleCheckout,
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Free Tier */}
-        <div className="bg-white p-8 rounded-lg shadow-md flex flex-col">
-          <h2 className="text-2xl font-semibold mb-4">Free Tier</h2>
-          <p className="text-lg mb-6">3 free stories per day</p>
-          <ul className="mb-6 space-y-2 list-disc list-inside">
-            <li>Daily limit: 3 articles</li>
-            <li>Access to summaries</li>
-            <li>No subscription required</li>
-          </ul>
-          <button
-            disabled
-            className="mt-auto px-6 py-3 bg-gray-300 text-gray-600 rounded-lg cursor-not-allowed"
-          >
-            Current Plan
-          </button>
-        </div>
-
-        {/* Pro Tier */}
-        <div className="bg-white p-8 rounded-lg shadow-md flex flex-col border-2 border-blue-600">
-          <h2 className="text-2xl font-semibold mb-4">Pro Tier</h2>
-          <p className="text-lg mb-6">$9.99 / month</p>
-          <ul className="mb-6 space-y-2 list-disc list-inside">
-            <li>Unlimited stories</li>
-            <li>Priority support</li>
-            <li>Cancel anytime</li>
-          </ul>
-          <button
-            onClick={handleSubscribe}
-            className="mt-auto px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            Subscribe Now
-          </button>
-        </div>
+        {plans.map((plan) => (
+          <PricingCard key={plan.name} plan={plan} />
+        ))}
       </div>
     </main>
   );

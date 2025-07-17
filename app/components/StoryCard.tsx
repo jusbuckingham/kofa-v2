@@ -14,6 +14,7 @@ export default function StoryCard({
 }: StoryCardProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [isReading, setIsReading] = useState(false);
 
   const saveStory = async () => {
     if (isSaved || isSaving) return;
@@ -31,30 +32,45 @@ export default function StoryCard({
     }
   };
 
-  const handleClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleClick = async () => {
+    if (isReading) return;
+    setIsReading(true);
     try {
-      const res = await fetch("/api/user/read", { method: "POST" });
-      const { remaining, subscriptionStatus } = await res.json();
-      if (subscriptionStatus === "active" || remaining > 0) {
-        window.open(story.url, "_blank");
-        const metaRes = await fetch("/api/user/metadata", { method: "POST" });
-        if (metaRes.ok) {
-          const json = await metaRes.json();
-          window.dispatchEvent(
-            new CustomEvent("metadataUpdated", {
-              detail: {
-                totalReads: json.totalReads,
-                lastLogin: json.lastLogin,
-              },
-            })
-          );
-        }
-      } else {
-        setShowPaywall(true);
+      // 1) check current dailyCount
+      const quotaRes = await fetch("/api/user/metadata");
+      if (!quotaRes.ok) throw new Error("Unable to check read limit");
+      const { dailyCount } = (await quotaRes.json()) as { dailyCount: number };
+      if (dailyCount >= 3) {
+        // over the free limit -> go to pricing
+        window.location.href = "/pricing";
+        return;
       }
+
+      // 2) record this read
+      const recRes = await fetch("/api/user/metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyId: story.id }),
+      });
+      if (recRes.ok) {
+        const meta = (await recRes.json()) as {
+          totalReads: number;
+          lastLogin: string;
+          dailyCount: number;
+        };
+        window.dispatchEvent(
+          new CustomEvent("metadataUpdated", { detail: meta })
+        );
+      } else {
+        console.error("Failed to record read");
+      }
+
+      // 3) open story
+      window.open(story.url, "_blank");
     } catch (err) {
       console.error("Error checking read quota", err);
+    } finally {
+      setIsReading(false);
     }
   };
 
@@ -101,8 +117,35 @@ export default function StoryCard({
       {story.url && !showPaywall && (
         <button
           onClick={handleClick}
-          className="mt-4 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center justify-center"
+          disabled={isReading}
+          className={`mt-4 px-3 py-1 rounded flex items-center justify-center ${
+            isReading
+              ? "bg-blue-300 text-white cursor-default"
+              : "bg-blue-500 hover:bg-blue-600 text-white"
+          }`}
         >
+          {isReading && (
+            <svg
+              className="animate-spin h-4 w-4 mr-2"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"
+              />
+            </svg>
+          )}
           Read
         </button>
       )}
