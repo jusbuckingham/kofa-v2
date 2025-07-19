@@ -4,13 +4,69 @@ import clientPromise from "@/lib/mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import Stripe from "stripe";
+import {
+  FREE_DAILY_STORY_LIMIT,
+  isSubscribedFromStripeObjects,
+  todayUTC,
+} from "@/lib/constants";
 
+// ---------- Stripe Client ----------
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2022-11-15",
 });
 
-const TODAY = () => new Date().toISOString().split("T")[0]; // “YYYY-MM-DD”
+// ---------- Types ----------
+interface UserMetadataDoc {
+  userEmail: string;
+  totalReads: number;
+  lastLogin: string;
+  dailyCount: number;
+  dailyDate: string; // YYYY-MM-DD (UTC)
+}
 
+// ---------- Helpers ----------
+async function getOrInitUserMetadata(db: any, userEmail: string): Promise<UserMetadataDoc> {
+  const coll = db.collection("userMetadata");
+  const today = todayUTC();
+  let doc: UserMetadataDoc | null = await coll.findOne({ userEmail });
+
+  if (!doc) {
+    doc = {
+      userEmail,
+      totalReads: 0,
+      lastLogin: new Date().toISOString(),
+      dailyCount: 0,
+      dailyDate: today,
+    };
+    await coll.insertOne(doc);
+  } else {
+    // Reset daily counters if crossing day boundary
+    if (doc.dailyDate !== today) {
+      await coll.updateOne(
+        { userEmail },
+        { $set: { dailyCount: 0, dailyDate: today } }
+      );
+      doc.dailyCount = 0;
+      doc.dailyDate = today;
+    }
+  }
+  return doc;
+}
+
+async function resolveSubscriptionStatus(userEmail: string) {
+  if (!process.env.STRIPE_SECRET_KEY) return false;
+  const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
+  const customer = customers.data[0];
+  if (!customer) return false;
+  const subs = await stripe.subscriptions.list({
+    customer: customer.id,
+    status: "active",
+    limit: 5,
+  });
+  return isSubscribedFromStripeObjects(subs.data);
+}
+
+// ---------- GET (Fetch current metadata + subscription + paywall state) ----------
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -20,54 +76,33 @@ export async function GET() {
 
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
-  const coll = db.collection("userMetadata");
 
-  const today = TODAY();
-  let totalReads = 0;
-  let lastLogin = new Date().toISOString();
-  let dailyCount = 0;
+  const doc = await getOrInitUserMetadata(db, userEmail);
+  const subscriptionStatus = await resolveSubscriptionStatus(userEmail);
 
-  const doc = await coll.findOne({ userEmail });
-  if (!doc) {
-    // first‐time user: create record
-    await coll.insertOne({ userEmail, totalReads, lastLogin, dailyCount, dailyDate: today });
-  } else {
-    totalReads = doc.totalReads || 0;
-    lastLogin = doc.lastLogin || lastLogin;
-
-    if (doc.dailyDate !== today) {
-      // reset today’s count
-      await coll.updateOne(
-        { userEmail },
-        { $set: { dailyCount: 0, dailyDate: today } }
-      );
-      dailyCount = 0;
-    } else {
-      dailyCount = doc.dailyCount || 0;
-    }
-  }
-
-  // 2) Check Stripe for an active subscription via customer lookup
-  const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
-  const customerId = customers.data[0]?.id;
-  const subs = customerId
-    ? await stripe.subscriptions.list({
-        customer: customerId,
-        status: "active",
-        limit: 1,
-      })
-    : { data: [] };
-  const subscriptionStatus = subs.data.length > 0;
+  // Determine if user is paywalled (only if *not* subscribed)
+  const isOverFreeLimit = !subscriptionStatus && doc.dailyCount >= FREE_DAILY_STORY_LIMIT;
+  const remainingFreeReads = subscriptionStatus
+    ? Infinity
+    : Math.max(FREE_DAILY_STORY_LIMIT - doc.dailyCount, 0);
 
   return NextResponse.json({
-    totalReads,
-    lastLogin,
-    dailyCount,
+    totalReads: doc.totalReads,
+    lastLogin: doc.lastLogin,
+    dailyCount: doc.dailyCount,
     subscriptionStatus,
+    freeLimit: FREE_DAILY_STORY_LIMIT,
+    remainingFreeReads,
+    isOverFreeLimit,
   });
 }
 
-export async function POST() {
+// ---------- POST (Increment read counts when a story is opened) ----------
+/**
+ * Body: { incrementDaily?: boolean }
+ * - incrementDaily (default true) allows optional suppression if needed.
+ */
+export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -78,44 +113,61 @@ export async function POST() {
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection("userMetadata");
 
-  const today = TODAY();
+  const { incrementDaily = true } = await (async () => {
+    try {
+      return await request.json();
+    } catch {
+      return {};
+    }
+  })();
+
+  // Ensure doc and day freshness
+  let doc = await getOrInitUserMetadata(db, userEmail);
+  const subscriptionStatus = await resolveSubscriptionStatus(userEmail);
+
+  // If already subscribed we do not enforce daily cap, but we still increment counters.
+  // If not subscribed and at/over limit, we DO NOT increment dailyCount (to keep stable),
+  // but we still may want to track totalReads only if below limit.
+  const today = todayUTC();
   const now = new Date().toISOString();
 
-  const doc = await coll.findOne({ userEmail });
-  if (!doc) {
-    // first read ever
-    await coll.insertOne({
-      userEmail,
-      totalReads: 1,
-      lastLogin: now,
-      dailyCount: 1,
-      dailyDate: today,
-    });
-  } else if (doc.dailyDate !== today) {
-    // new day: reset dailyCount to 1
-    await coll.updateOne(
-      { userEmail },
-      {
-        $inc: { totalReads: 1 },
-        $set: { lastLogin: now, dailyCount: 1, dailyDate: today },
+  const update: any = { $set: { lastLogin: now } };
+  if (incrementDaily) {
+    // totalReads always increments to measure engagement
+    update.$inc = { totalReads: 1 };
+
+    if (subscriptionStatus) {
+      // Subscriber: dailyCount increments freely
+      update.$inc.dailyCount = 1;
+    } else {
+      // Free user: only increment dailyCount if still under limit
+      if (doc.dailyCount < FREE_DAILY_STORY_LIMIT) {
+        update.$inc.dailyCount = 1;
       }
-    );
-  } else {
-    // same day: just increment
-    await coll.updateOne(
-      { userEmail },
-      {
-        $inc: { totalReads: 1, dailyCount: 1 },
-        $set: { lastLogin: now },
-      }
-    );
+    }
   }
 
-  // return updated values
-  const updated = await coll.findOne({ userEmail });
+  // Apply update
+  await coll.updateOne({ userEmail }, update);
+
+  // Re-fetch
+  doc = await getOrInitUserMetadata(db, userEmail);
+
+  const isOverFreeLimit =
+    !subscriptionStatus && doc.dailyCount >= FREE_DAILY_STORY_LIMIT;
+  const remainingFreeReads = subscriptionStatus
+    ? Infinity
+    : Math.max(FREE_DAILY_STORY_LIMIT - doc.dailyCount, 0);
+
   return NextResponse.json({
-    totalReads: updated?.totalReads ?? 0,
-    lastLogin: updated?.lastLogin ?? now,
-    dailyCount: updated?.dailyCount ?? 0,
+    totalReads: doc.totalReads,
+    lastLogin: doc.lastLogin,
+    dailyCount: doc.dailyCount,
+    subscriptionStatus,
+    freeLimit: FREE_DAILY_STORY_LIMIT,
+    remainingFreeReads,
+    isOverFreeLimit,
+    dailyDate: doc.dailyDate,
+    today,
   });
 }
