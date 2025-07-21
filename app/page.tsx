@@ -1,11 +1,17 @@
+import { headers } from "next/headers";
 import NewsList from "./components/NewsList";
 import type { NewsStory } from "./types";
 
 const NEWS_LIMIT = 5;
 
 export default async function HomePage() {
+  const allHeaders = await headers();
+  const host = allHeaders.get("host") ?? "";
+  const protocol = host.startsWith("localhost") ? "http" : "https";
+  const baseUrl = `${protocol}://${host}`;
+
   // Fetch top stories server-side
-  const newsRes = await fetch(`/api/news/get?limit=${NEWS_LIMIT}`, {
+  const newsRes = await fetch(`${baseUrl}/api/news/get?limit=${NEWS_LIMIT}`, {
     cache: "no-store",
   });
   let initialStories: NewsStory[] = [];
@@ -15,7 +21,7 @@ export default async function HomePage() {
   }
 
   // Fetch user favorites server-side
-  const favRes = await fetch(`/api/favorites`, { cache: "no-store" });
+  const favRes = await fetch(`${baseUrl}/api/favorites`, { cache: "no-store" });
   let favArray: { story: NewsStory }[] = [];
   if (favRes.ok) {
     const favJson = (await favRes.json()) as { data: { story: NewsStory }[] };
