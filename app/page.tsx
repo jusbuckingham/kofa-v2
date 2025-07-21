@@ -1,15 +1,18 @@
 import NewsList from "./components/NewsList";
 import type { NewsStory } from "./types";
-
-// Add this line:
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+import { headers } from "next/headers";
 
 const NEWS_LIMIT = 5;
 
 export default async function HomePage() {
+  // Determine absolute origin for server-side fetch
+  const hdrs = await headers();
+  const host = hdrs.get("host") ?? "localhost:3000";
+  const protocol = host.includes("localhost") ? "http" : "https";
+  const baseUrl = `${protocol}://${host}`;
   // Fetch top stories server-side
   const newsRes = await fetch(
-    `${BASE_URL}/api/news/get?limit=${NEWS_LIMIT}`,
+    `${baseUrl}/api/news/get?limit=${NEWS_LIMIT}`,
     { cache: "no-store" }
   );
   let initialStories: NewsStory[] = [];
@@ -20,7 +23,7 @@ export default async function HomePage() {
 
   // Fetch user favorites server-side
   const favRes = await fetch(
-    `${BASE_URL}/api/favorites`,
+    `${baseUrl}/api/favorites`,
     { cache: "no-store" }
   );
   let favArray: { story: NewsStory }[] = [];
