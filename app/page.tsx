@@ -16,8 +16,8 @@ export default async function HomePage() {
   });
   let initialStories: NewsStory[] = [];
   if (newsRes.ok) {
-    const newsJson = (await newsRes.json()) as { data: NewsStory[] };
-    initialStories = Array.isArray(newsJson.data) ? newsJson.data : [];
+    const newsJson = (await newsRes.json()) as NewsStory[];
+    initialStories = Array.isArray(newsJson) ? newsJson : [];
   }
 
   // Fetch user favorites server-side

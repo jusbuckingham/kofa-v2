@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       .limit(limit)
       .toArray();
 
-    return NextResponse.json({ data: articles });
+    return NextResponse.json(articles);
   } catch (err) {
     console.error("DB error:", err);
     return NextResponse.json({ error: "Failed to fetch news" }, { status: 500 });
