@@ -1,123 +1,174 @@
-
 # Kofa
 
-**Black culturally conscious summaries of the latest news.** Kofa delivers concise, community-centered news digests so you can stay informed without sifting through noise.
+**Black culturally conscious summaries of the latest news.**
 
+Kofa lets anyone read 3 AI‑summarized stories a day for free and offers unlimited access with a paid subscription. Built with the Next.js App Router, MongoDB, NextAuth, and Stripe.
 
 ---
 
 ## ✨ Features
 
-- 📰 **Public News Ticker**: Continuously scrolling AI-summarized headlines.  
-- 🔒 **User Accounts & Authentication**: Email-based sign-in via NextAuth.  
-- ⭐ **Saved Stories / Favorites**: Users can save and unsave articles in their dashboard.  
-- ⏳ **Metered Paywall**: Free users read up to 3 stories per day; Pro subscribers get unlimited access.  
-- 💳 **Subscription Billing**: Stripe integration for paid subscriptions and automated webhook handling.  
-- ⚙️ **Admin UI**: Trigger RSS fetch and summarize on demand.  
-- 🕒 **Scheduled Fetch**: Vercel Cron hit `/api/fetch-news` periodically (optional).  
+| Area | What it does |
+|------|---------------|
+| News ingestion | Fetch RSS feeds, summarize with OpenAI, store in MongoDB |
+| Public home page | "Today’s Top Stories" list with client pagination |
+| Auth | Email magic link (NextAuth Email provider) + optional demo login for local dev |
+| Metered paywall | 3 free reads / day tracked in MongoDB; banner + CTA when you hit the limit |
+| Favorites | Save / unsave from any card, view in `/dashboard` |
+| Billing | Stripe Checkout for Pro, webhook to mark users as `pro` |
+| Admin tools | Manual fetch endpoint & (optional) cron job on Vercel |
 
 ---
 
 ## 🧱 Tech Stack
 
-- **Next.js** (App Router, TypeScript)  
-- **Tailwind CSS**  
-- **MongoDB Atlas**  
-- **OpenAI API**  
-- **Vercel**  
+- **Next.js 15 (App Router, TypeScript)**
+- **MongoDB Atlas** via the official Node driver
+- **NextAuth v4** (email provider)
+- **Stripe** (Checkout + Webhooks)
+- **Tailwind CSS**
+- **Vercel** for hosting & cron
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quickstart (Local Dev)
 
-### Prerequisites
-- Node.js ≥16  
-- npm or Yarn account for dependencies  
-- MongoDB Atlas cluster  
-- OpenAI API key  
+1. **Install deps**
+   ```bash
+   npm install
+   # or: yarn install
+   ```
+2. **Create `.env.local`** (see table below).
+3. **Run dev server**
+   ```bash
+   npm run dev
+   ```
+4. Visit http://localhost:3000
+5. (Optional) **Stripe webhooks locally**
+   ```bash
+   # If you have the Stripe CLI installed
+   stripe listen --forward-to localhost:3000/api/stripe/webhooks
+   ```
 
-### 1. Install Dependencies
-```bash
-npm install
-```
+---
 
-### 2. Configure Environment Variables
+## 🔐 Environment Variables
 
-Create a `.env.local` file in the project root with:
+Create **`.env.local`** with:
 
 ```env
-MONGODB_URI=<your MongoDB Atlas connection string>
-OPENAI_API_KEY=<your OpenAI API key>
+# Mongo / OpenAI
+MONGODB_URI=your-mongodb-uri
+OPENAI_API_KEY=sk-...
+
+# NextAuth
 NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=<your NextAuth secret>
-STRIPE_SECRET_KEY=<your Stripe secret key>
-STRIPE_PRO_PRICE_ID=<your Stripe price ID>
-STRIPE_WEBHOOK_SECRET=<your Stripe webhook secret>
+NEXTAUTH_SECRET=generate_a_long_random_string
+EMAIL_SERVER_HOST=smtp.example.com
+EMAIL_SERVER_PORT=465
+EMAIL_SERVER_USER=postmaster@example.com
+EMAIL_SERVER_PASSWORD=super-secret
+EMAIL_FROM="Kofa <no-reply@example.com>"
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRO_PRICE_ID=price_123
+STRIPE_WEBHOOK_SECRET=whsec_123
+
+# Public
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-### Polyfills
-
-If you see errors related to `expo-secure-store`, a shim is provided in `/polyfills/expo-secure-store.js`. No additional action is needed.
-
-### 3. Run Locally
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+> **Tip:** Generate a secret quickly: `openssl rand -base64 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 
 ---
 
-## 📦 Project Structure
+## 🧭 Project Structure
 
 ```
 app/
-├── layout.tsx
-├── page.tsx
-├── dashboard/
-│   └── page.tsx
-├── admin/
-│   └── page.tsx
-└── components/
-    └── NewsTicker.tsx
-
-app/api/
-├── auth/[...nextauth]/route.ts
-├── stripe/
-│   ├── checkout/route.ts
-│   └── webhooks/route.ts
-├── user/
-│   └── read/route.ts
-├── favorites/route.ts
-└── user/metadata/route.ts
-
+  layout.tsx             # Root layout – Providers, Header, Quota banner
+  page.tsx               # Home page (news list)
+  signin/page.tsx        # Magic-link sign in + demo button (dev only)
+  dashboard/page.tsx     # Saved stories + remove button
+  components/            # UI & context components
+    Header.tsx
+    NewsList.tsx
+    ReadQuotaContext.tsx
+    ReadQuotaBanner.tsx
+    ReadCounter.tsx
+  api/
+    auth/[...nextauth]/route.ts     # NextAuth handler
+    favorites/route.ts              # GET/POST/DELETE favorites
+    news/get/route.ts               # Public stories API
+    stripe/checkout/route.ts        # Create Checkout session
+    stripe/webhooks/route.ts        # Stripe webhook handler
+    user/read/route.ts              # Increment read count
+    user/metadata/route.ts          # Update subscription/reads
 lib/
-├── mongodb.ts
-└── summarize.ts
-
-middleware.ts
-styles/globals.css
+  mongodb.ts
+  summarize.ts
+middleware.ts                       # Protect routes (/dashboard, /api/favorites, etc.)
 ```
 
 ---
 
-## 📝 Available Scripts
+## 🧑‍💻 Auth & Paywall Flow (High Level)
 
-- `npm run dev` – Start the development server  
-- `npm run build` – Build for production  
-- `npm run start` – Start the production server  
-- (Optional) Configure Vercel Cron to hit `/api/fetch-news` periodically
+1. **Unauthenticated** user hits home → can read 3 stories/day.
+2. Each read calls `/api/user/read` which increments `readsToday` for the user or in a guest cookie.
+3. When `readsToday >= 3`, the **ReadQuotaBanner** renders and links to `/pricing`.
+4. Pro users skip the meter (flag `subscriptionStatus === 'pro'`).
+5. Stripe webhook flips that flag when payment succeeds; cancellation flips it back.
 
 ---
 
-## 🛠 Development Tips
+## 💳 Stripe Setup
 
-- Use `ngrok` or Vercel Preview Deployments to test Stripe webhooks locally.  
-- Monitor read-quota events by inspecting `/api/user/read` responses.  
-- Customize your MQTT fetch schedule via the Vercel Cron configuration.  
+1. Create a **Product** and a **Price** in the Stripe Dashboard → copy the Price ID.
+2. Create a webhook endpoint pointing to `/api/stripe/webhooks`.
+3. Copy the **Signing secret** to `STRIPE_WEBHOOK_SECRET`.
+4. Use the Stripe CLI or `ngrok` during local dev to forward events.
+
+---
+
+## 🛠 Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run start` | Start prod server locally |
+
+---
+
+## 🚢 Deploying to Vercel
+
+1. Push to GitHub → connect repo in Vercel.
+2. Add all env vars in **Project Settings → Environment Variables**.
+3. (Optional) Add a cron job in **Settings → Cron Jobs** to call `/api/fetch-news`.
+4. Set **Build Command** to `next build` and **Output Directory** to `.next` (default).
+
+---
+
+## 🧰 Troubleshooting
+
+- **`useSession must be wrapped in <SessionProvider />`** – ensure `Providers` wraps the app in `layout.tsx`.
+- **`Invalid login` for email auth** – verify SMTP creds & ports.
+- **`Unexpected token '<'` JSON parse** – your fetch hit an HTML error page; log `res.text()`.
+- **ESLint build errors on Vercel** – either fix them or disable specific rules in `.eslintrc`.
+
+---
+
+## 🗺 Roadmap / Ideas
+
+- [ ] Topic filters & search
+- [ ] Mobile app shell
+- [ ] Commenting / community notes
+- [ ] Multiple pricing tiers
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT © 2025 Jus Buckingham
