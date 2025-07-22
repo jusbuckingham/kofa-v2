@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Header from "./components/Header";
 import Providers from "./providers";
 import ReadQuotaBanner from "./components/ReadQuotaBanner";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "KOFA",
@@ -11,13 +12,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <Providers>
           <Header />
           <div className="mx-auto max-w-5xl px-4 py-4 space-y-4">
             {/* Client banner reads context via hook */}
-            <ReadQuotaBanner />
+            <Suspense fallback={null}>
+              <ReadQuotaBanner />
+            </Suspense>
             {children}
           </div>
         </Providers>

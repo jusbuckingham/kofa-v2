@@ -1,64 +1,49 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  ReactNode,
-  useCallback,
-} from "react";
+import React from "react";
+import { useQuota } from "./ReadQuotaContext";
 
-type QuotaState = {
-  remaining: number | null;
-  limit: number | null;
-  resetAt: Date | null;
-  paywalled: boolean;
+type Props = {
+  className?: string;
 };
 
-type QuotaContextValue = QuotaState & {
-  setQuota: (patch: Partial<QuotaState>) => void;
-  openPaywallModal: () => void;
-};
+const ReadQuotaBanner: React.FC<Props> = ({ className }) => {
+  const quota = useQuota();
+  if (!quota) return null; // handle null/undefined from context safely
+  const { remaining, limit, paywalled } = quota;
+  const safeRemaining = remaining ?? 0;
 
-const ReadQuotaContext = createContext<QuotaContextValue | undefined>(undefined);
-
-export function ReadQuotaProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<QuotaState>({
-    remaining: null,
-    limit: null,
-    resetAt: null,
-    paywalled: false,
-  });
-
-  const setQuota = useCallback((patch: Partial<QuotaState>) => {
-    setState((s) => ({ ...s, ...patch }));
-  }, []);
-
-  const openPaywallModal = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("open-paywall-modal"));
-    }
-  }, []);
-
-  const value: QuotaContextValue = {
-    ...state,
-    setQuota,
-    openPaywallModal,
-  };
+  // Hide if unlimited or already subscribed
+  if (limit === 0 || paywalled === false) return null;
 
   return (
-    <ReadQuotaContext.Provider value={value}>
-      {children}
-    </ReadQuotaContext.Provider>
+    <div
+      role="alert"
+      className={
+        className ??
+        "mb-4 rounded-md bg-yellow-100 px-4 py-3 text-sm text-yellow-800"
+      }
+    >
+      {safeRemaining > 0 ? (
+        <p>
+          You have <strong>{safeRemaining}</strong> free story
+          {safeRemaining === 1 ? "" : "ies"} left today (out of {limit}).{" "}
+          <a href="/pricing" className="underline hover:no-underline font-medium">
+            Go unlimited
+          </a>
+          .
+        </p>
+      ) : (
+        <p>
+          You’ve hit your free limit for today.{" "}
+          <a href="/pricing" className="underline hover:no-underline font-medium">
+            Upgrade to keep reading
+          </a>
+          .
+        </p>
+      )}
+    </div>
   );
-}
+};
 
-export function useReadQuota() {
-  const ctx = useContext(ReadQuotaContext);
-  if (!ctx) {
-    throw new Error("useReadQuota must be used within a ReadQuotaProvider");
-  }
-  return ctx;
-}
-
-export default ReadQuotaProvider;
+export default ReadQuotaBanner;
