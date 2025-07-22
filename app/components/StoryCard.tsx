@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useId } from "react";
+import React, { useState, useId, useEffect } from "react";
 import Link from "next/link";
 import type { NewsStory } from "../types";
 
@@ -30,6 +30,8 @@ export default function StoryCard({
   const [readsLeft, setReadsLeft] = useState<number | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
+  const [overLimit, setOverLimit] = useState(false);
+  const MAX_FALLBACK_FREE = 3;
   const titleId = useId();
 
   /**
@@ -58,36 +60,51 @@ export default function StoryCard({
   }
 
   async function handleRead() {
-    if (reading) return;
+    if (reading || overLimit) return;
     setReading(true);
     setReadError(null);
 
     try {
-      // First lightweight *quota check* (GET) — consider removing once you implement dedicated POST read endpoint.
-      const quotaRes = await fetch("/api/user/metadata");
-      if (!quotaRes.ok) throw new Error("Unable to check read limit");
-      const {
-        dailyCount,
-        maxFree = 3,
-      } = (await quotaRes.json()) as { dailyCount: number; maxFree?: number };
-
-      if (dailyCount >= maxFree) {
-        // Trigger paywall UI instead of redirect
+      // Hit the quota endpoint first. It both enforces limit (402) and returns remaining.
+      const quotaRes = await fetch("/api/news/get?limit=0", { cache: "no-store" });
+      if (quotaRes.status === 402) {
+        setOverLimit(true);
         if (onPaywall) {
           onPaywall({ storyId: story.id });
         } else {
-          // fallback redirect
+          window.location.href = "/pricing";
+        }
+        return;
+      }
+      if (!quotaRes.ok) throw new Error("Unable to check read limit");
+
+      const { remaining = 0, limit: maxFree = MAX_FALLBACK_FREE } = (await quotaRes.json()) as {
+        remaining?: number;
+        limit?: number;
+      };
+
+      // Derive how many reads have been used today
+      const usedToday = Math.max(0, (maxFree ?? MAX_FALLBACK_FREE) - remaining);
+
+      // If user is at/over the limit, trigger paywall
+      if (usedToday >= (maxFree ?? MAX_FALLBACK_FREE)) {
+        setOverLimit(true);
+        if (onPaywall) {
+          onPaywall({ storyId: story.id });
+        } else {
           window.location.href = "/pricing";
         }
         return;
       }
 
-      // Record read & get updated counts
+      // Record this read (increment counters)
       const result = await attemptConsumeRead(story.id);
       const updatedDaily = result.dailyCount;
-      setReadsLeft(Math.max((result.maxFree ?? maxFree) - updatedDaily, 0));
+      const calcLeft = Math.max((result.maxFree ?? maxFree) - updatedDaily, 0);
+      setReadsLeft(calcLeft);
+      if (calcLeft === 0) setOverLimit(true);
 
-      // Broadcast metadata update globally (optional listener in dashboard)
+      // Broadcast metadata update globally (optional)
       window.dispatchEvent(
         new CustomEvent("metadataUpdated", {
           detail: {
@@ -103,13 +120,28 @@ export default function StoryCard({
         window.open(story.url, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to open story";
+      const message = err instanceof Error ? err.message : "Failed to open story";
       setReadError(message);
     } finally {
       setReading(false);
     }
   }
+  useEffect(() => {
+    function onMeta(e: Event) {
+      const detail = (e as CustomEvent<{
+        dailyCount: number;
+        totalReads?: number;
+        maxFree?: number;
+      }>).detail;
+      if (!detail) return;
+      const left = Math.max((detail.maxFree ?? MAX_FALLBACK_FREE) - detail.dailyCount, 0);
+      setReadsLeft(left);
+      setOverLimit(left === 0);
+    }
+
+    window.addEventListener("metadataUpdated", onMeta);
+    return () => window.removeEventListener("metadataUpdated", onMeta);
+  }, []);
 
   async function handleSave() {
     if (saving || saved) return;
@@ -217,21 +249,29 @@ export default function StoryCard({
       <div className="flex items-center gap-3">
         {story.url && (
           <button
-            onClick={handleRead}
-            disabled={reading}
+            onClick={
+              overLimit
+                ? () =>
+                    onPaywall
+                      ? onPaywall({ storyId: story.id })
+                      : (window.location.href = "/pricing")
+                : handleRead
+            }
+            disabled={reading || overLimit}
             className={`relative inline-flex items-center px-3 py-1.5 rounded
               text-sm font-medium transition
               ${
-                reading
+                overLimit
+                  ? "bg-gray-400 text-white cursor-not-allowed"
+                  : reading
                   ? "bg-blue-300 text-white cursor-default"
                   : "bg-blue-600 hover:bg-blue-700 text-white"
               }`}
+            aria-disabled={reading || overLimit}
           >
-            {reading && (
-              <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Loading" />
-            )}
-            Read
-            {readsLeft !== null && (
+            {reading && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Loading" />}
+            {overLimit ? "Upgrade to continue" : "Read"}
+            {readsLeft !== null && !overLimit && (
               <span className="ml-2 text-[10px] font-normal opacity-80">
                 {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
               </span>

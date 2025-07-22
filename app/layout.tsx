@@ -1,32 +1,23 @@
-import '../styles/globals.css';
-import Header from './components/Header';
+import "styles/globals.css";
+import type { Metadata } from "next";
+import Header from "./components/Header";
 import Providers from "./providers";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import ReadQuotaBanner from "./components/ReadQuotaBanner";
 
-export const metadata = {
-  title: 'Kofa AI',
-  description: 'AI news interpreted through a Black lens',
+export const metadata: Metadata = {
+  title: "KOFA",
+  description: "Black culturally conscious news summaries",
 };
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  // Safely fetch session for Providers
-  let session = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch (err) {
-    console.error("Failed to get session in RootLayout:", err);
-  }
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="antialiased bg-gray-100 dark:bg-gray-900">
-        <Providers session={session}>
+      <body className="antialiased">
+        <Providers>
           <Header />
-          <div className="max-w-5xl mx-auto px-4 py-8">
+          <div className="mx-auto max-w-5xl px-4 py-4 space-y-4">
+            {/* Client banner reads context via hook */}
+            <ReadQuotaBanner />
             {children}
           </div>
         </Providers>

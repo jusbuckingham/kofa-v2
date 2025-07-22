@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import type { NewsStory } from "../types";
 import StoryCard from "./StoryCard";
 
 interface NewsListProps {
   initialStories?: NewsStory[];
-  savedIds: Set<string | number>;
+  savedIds?: Array<string | number>;
 }
 
 export default function NewsList({
   initialStories = [],
-  savedIds,
+  savedIds = [],
 }: NewsListProps) {
   const [stories, setStories] = useState<NewsStory[]>(initialStories);
   const [page, setPage] = useState(1);
@@ -19,6 +19,9 @@ export default function NewsList({
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [totalPages, setTotalPages] = useState<number | null>(null);
+
+  // Ensure we always have a Set to call .has on, even if an array was passed from the server
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
@@ -65,7 +68,7 @@ export default function NewsList({
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {stories.map((story, idx) => (
           <div key={story.id ?? idx} className="fade-in">
-            <StoryCard story={story} isSaved={savedIds.has(story.id)} />
+            <StoryCard story={story} isSaved={savedSet.has(story.id)} />
           </div>
         ))}
       </div>
