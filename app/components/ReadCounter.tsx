@@ -1,9 +1,7 @@
-
-
 "use client";
 
 import React from "react";
-import { useReadQuota } from "./ReadQuotaContext";
+import { useQuota } from "./ReadQuotaContext";
 
 type ReadCounterProps = {
   className?: string;
@@ -14,7 +12,7 @@ type ReadCounterProps = {
  * Returns null while quota is loading.
  */
 export function ReadCounter({ className }: ReadCounterProps) {
-  const { remaining, limit, paywalled } = useReadQuota();
+  const { remaining, limit, paywalled } = useQuota();
 
   if (remaining === null) return null;
 
