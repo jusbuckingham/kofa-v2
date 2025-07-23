@@ -5,6 +5,7 @@ import clientPromise from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -30,13 +31,14 @@ export async function POST(req: Request) {
     "customer.subscription.created",
     "customer.subscription.updated",
     "customer.subscription.deleted",
+    "invoice.payment_failed",
   ]);
 
   if (!relevant.has(event.type)) {
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true }, { status: 200 });
   }
 
-  const db = (await clientPromise).db();
+  const db = (await clientPromise).db(process.env.MONGODB_DB_NAME || "kofa");
   const users = db.collection("user_metadata"); // keep in sync with read/quota route
 
   const upsertUserByCustomer = async ({
@@ -99,9 +101,20 @@ export async function POST(req: Request) {
         });
         break;
       }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        // Mark subscription inactive until Stripe tells us otherwise
+        await users.updateOne(
+          { stripeCustomerId: customerId },
+          { $set: { hasActiveSub: false, subscriptionStatus: "payment_failed" } }
+        );
+        break;
+      }
     }
 
-    return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true }, { status: 200 });
   } catch (err: unknown) {
     console.error("Webhook handler error:", (err as Error).message);
     return NextResponse.json({ error: "Webhook error" }, { status: 500 });
