@@ -39,16 +39,33 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/signin" },
   callbacks: {
     async jwt({ token, user }: { token: JWT; user?: User }) {
-      if (user) {
-        const client = await clientPromise;
-        const dbUser = await client.db().collection("users").findOne({ email: user.email });
-        token.subscriptionStatus = dbUser?.subscriptionStatus || "inactive";
+      // When a user first logs in, "user" is defined. On subsequent calls, only the token is available.
+      const email = user?.email || (token.email as string | undefined);
+      if (!email) return token;
+
+      // Avoid extra queries if we've already embedded these on the token
+      if (typeof token.hasActiveSub !== "undefined" && typeof token.stripeCustomerId !== "undefined") {
+        return token;
       }
+
+      const client = await clientPromise;
+      const db = client.db(process.env.MONGODB_DB_NAME || undefined);
+      const coll = db.collection("user_metadata");
+      const dbUser = await coll.findOne({ email });
+
+      token.hasActiveSub = !!dbUser?.hasActiveSub;
+      token.stripeCustomerId = dbUser?.stripeCustomerId ?? null;
+
       return token;
     },
     async session({ session, token }: { session: Session; token: JWT }) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (session.user as any).subscriptionStatus = token.subscriptionStatus as string;
+      const su = session.user as typeof session.user & {
+        hasActiveSub: boolean;
+        stripeCustomerId: string | null;
+      };
+      su.hasActiveSub = Boolean(token.hasActiveSub);
+      su.stripeCustomerId = (token.stripeCustomerId as string | null) ?? null;
+      session.user = su;
       return session;
     },
   },

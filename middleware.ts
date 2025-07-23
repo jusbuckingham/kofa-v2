@@ -21,6 +21,14 @@ const PROTECTED_PREFIXES = [
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  const isApi = pathname.startsWith("/api/");
+  const method = req.method;
+
+  // Always allow CORS preflight
+  if (method === "OPTIONS") {
+    return NextResponse.next();
+  }
+
   // Allow Next.js internals and static assets
   if (
     pathname.startsWith("/_next") ||
@@ -51,11 +59,13 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
   if (!token) {
+    // For API routes, return JSON 401 instead of redirecting to HTML signin page
+    if (isApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const signInUrl = new URL("/signin", req.url);
-    signInUrl.searchParams.set(
-      "callbackUrl",
-      req.nextUrl.pathname + req.nextUrl.search
-    );
+    signInUrl.searchParams.set("callbackUrl", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }
 
@@ -69,7 +79,5 @@ export const config = {
     "/api/favorites/:path*",
     "/api/user/:path*",
     "/api/stripe/checkout/:path*",
-    // Also run on root to early-exit for public pages & to support dynamic banners, etc.
-    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

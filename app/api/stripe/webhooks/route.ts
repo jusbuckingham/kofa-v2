@@ -1,76 +1,109 @@
+import type Stripe from "stripe";
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import { stripe } from "@/lib/stripe";
 import clientPromise from "@/lib/mongodb";
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2022-11-15",
-});
+export async function POST(req: Request) {
+  const sig = req.headers.get("stripe-signature");
+  if (!sig) return NextResponse.json({ error: "No signature" }, { status: 400 });
 
-export async function POST(request: Request) {
-  // 1. Read the raw body and signature
-  const buf = await request.text();
-  const sig = request.headers.get("stripe-signature")!;
+  const rawBody = await req.text();
+
   let event: Stripe.Event;
-
-  // 2. Verify webhook signature
   try {
     event = stripe.webhooks.constructEvent(
-      buf,
+      rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("Webhook signature verification failed:", message);
-    return new NextResponse(`Webhook Error: ${message}`, { status: 400 });
+  } catch (err: unknown) {
+    console.error("❌ Webhook signature verify failed:", (err as Error).message);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // 3. Connect to Mongo and grab the users collection
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
-  const users = db.collection("users");
+  // We care about these events
+  const relevant = new Set<Stripe.Event["type"]>([
+    "checkout.session.completed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+  ]);
 
-  // 4. Handle the event types
-  switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const customerId = session.customer as string;
-      await users.updateOne(
-        { stripeCustomerId: customerId },
-        { $set: { subscriptionStatus: "active" } }
-      );
-      break;
-    }
-    case "customer.subscription.updated":
-    case "invoice.paid": {
-      const subscription = event.data.object as Stripe.Subscription;
-      const customerId = subscription.customer as string;
-      const isActive = subscription.status === "active";
-      await users.updateOne(
-        { stripeCustomerId: customerId },
-        { $set: { subscriptionStatus: isActive ? "active" : "inactive" } }
-      );
-      break;
-    }
-    case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const customerId = invoice.customer as string;
-      await users.updateOne(
-        { stripeCustomerId: customerId },
-        { $set: { subscriptionStatus: "inactive" } }
-      );
-      break;
-    }
-    default:
-      console.log(`Unhandled Stripe event type: ${event.type}`);
+  if (!relevant.has(event.type)) {
+    return NextResponse.json({ received: true });
   }
 
-  // 5. Return a 200 to acknowledge receipt
-  return NextResponse.json({ received: true });
+  const db = (await clientPromise).db();
+  const users = db.collection("user_metadata"); // keep in sync with read/quota route
+
+  const upsertUserByCustomer = async ({
+    customerId,
+    email,
+    subscription,
+  }: {
+    customerId: string;
+    email?: string | null;
+    subscription?: Stripe.Subscription | null;
+  }) => {
+    const hasActiveSub =
+      subscription?.status === "active" || subscription?.status === "trialing";
+
+    await users.updateOne(
+      email
+        ? { $or: [{ stripeCustomerId: customerId }, { email }] }
+        : { stripeCustomerId: customerId },
+      {
+        $set: {
+          stripeCustomerId: customerId,
+          hasActiveSub,
+          subscriptionStatus: subscription?.status ?? null,
+          subscriptionCurrentPeriodEnd: subscription?.current_period_end
+            ? new Date(subscription.current_period_end * 1000)
+            : null,
+        },
+      },
+      { upsert: true }
+    );
+  };
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const customerId = session.customer as string;
+        const subscriptionId = session.subscription as string | undefined;
+
+        let subscription: Stripe.Subscription | null = null;
+        if (subscriptionId) {
+          subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        }
+
+        await upsertUserByCustomer({
+          customerId,
+          email: session.customer_details?.email ?? null,
+          subscription,
+        });
+        break;
+      }
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await upsertUserByCustomer({
+          customerId: subscription.customer as string,
+          subscription,
+        });
+        break;
+      }
+    }
+
+    return NextResponse.json({ received: true });
+  } catch (err: unknown) {
+    console.error("Webhook handler error:", (err as Error).message);
+    return NextResponse.json({ error: "Webhook error" }, { status: 500 });
+  }
 }

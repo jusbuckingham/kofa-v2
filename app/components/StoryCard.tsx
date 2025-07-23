@@ -18,12 +18,7 @@ interface StoryCardProps {
   onPaywall?: (context?: { storyId: string | number }) => void; // trigger paywall modal instead of hard redirect
 }
 
-export default function StoryCard({
-  story,
-  isSaved = false,
-  onSaved,
-  onPaywall,
-}: StoryCardProps) {
+export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }: StoryCardProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(isSaved);
   const [reading, setReading] = useState(false);
@@ -35,27 +30,40 @@ export default function StoryCard({
   const titleId = useId();
 
   /**
-   * Attempt to consume a daily read *and* record it in one call.
-   * Endpoint suggestion: POST /api/user/metadata/read (you currently POST to /api/user/metadata;
-   * adjust URL below when you implement a dedicated endpoint).
-   * The endpoint should return:
-   *   { allowed: boolean; dailyCount: number; totalReads: number; maxFree: number }
+   * Hit the new quota endpoint that both checks and optionally increments the count.
+   *   GET  /api/user/read        -> { readsToday, limit, allowed, hasActiveSub }
+   *   POST /api/user/read        -> same payload, but increments when allowed
    */
-  async function attemptConsumeRead(storyId: string | number) {
-    // Using your existing POST /api/user/metadata for now.
-    const res = await fetch("/api/user/metadata", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storyId }),
+  async function hitQuotaEndpoint(options: { increment: boolean; storyId?: string | number }) {
+    const { increment, storyId } = options;
+    const endpoint = "/api/user/read";
+    const res = await fetch(endpoint, {
+      method: increment ? "POST" : "GET",
+      headers: increment ? { "Content-Type": "application/json" } : undefined,
+      body: increment ? JSON.stringify({ increment: true, storyId }) : undefined,
+      cache: "no-store",
     });
-    if (!res.ok) {
-      throw new Error(`Read request failed (${res.status})`);
+
+    if (res.status === 402) {
+      // custom quota exceeded response
+      const data = await res.json().catch(() => ({}));
+      return { ...data, allowed: false } as {
+        readsToday: number;
+        limit: number;
+        allowed: boolean;
+        hasActiveSub?: boolean;
+      };
     }
+
+    if (!res.ok) {
+      throw new Error(`Quota check failed (${res.status})`);
+    }
+
     return (await res.json()) as {
-      allowed?: boolean; // future shape
-      dailyCount: number;
-      totalReads?: number;
-      maxFree?: number;
+      readsToday: number;
+      limit: number;
+      allowed: boolean;
+      hasActiveSub?: boolean;
     };
   }
 
@@ -65,57 +73,35 @@ export default function StoryCard({
     setReadError(null);
 
     try {
-      // Hit the quota endpoint first. It both enforces limit (402) and returns remaining.
-      const quotaRes = await fetch("/api/news/get?limit=0", { cache: "no-store" });
-      if (quotaRes.status === 402) {
-        setOverLimit(true);
-        if (onPaywall) {
-          onPaywall({ storyId: story.id });
-        } else {
-          window.location.href = "/pricing";
-        }
-        return;
-      }
-      if (!quotaRes.ok) throw new Error("Unable to check read limit");
+      // Increment on the server and get the fresh numbers back
+      const quota = await hitQuotaEndpoint({ increment: true, storyId: story.id });
 
-      const { remaining = 0, limit: maxFree = MAX_FALLBACK_FREE } = (await quotaRes.json()) as {
-        remaining?: number;
-        limit?: number;
-      };
+      const limit = quota.limit ?? MAX_FALLBACK_FREE;
+      const left = Math.max(limit - quota.readsToday, 0);
+      setReadsLeft(left);
+      setOverLimit(!quota.allowed || left === 0);
 
-      // Derive how many reads have been used today
-      const usedToday = Math.max(0, (maxFree ?? MAX_FALLBACK_FREE) - remaining);
-
-      // If user is at/over the limit, trigger paywall
-      if (usedToday >= (maxFree ?? MAX_FALLBACK_FREE)) {
-        setOverLimit(true);
-        if (onPaywall) {
-          onPaywall({ storyId: story.id });
-        } else {
-          window.location.href = "/pricing";
-        }
-        return;
-      }
-
-      // Record this read (increment counters)
-      const result = await attemptConsumeRead(story.id);
-      const updatedDaily = result.dailyCount;
-      const calcLeft = Math.max((result.maxFree ?? maxFree) - updatedDaily, 0);
-      setReadsLeft(calcLeft);
-      if (calcLeft === 0) setOverLimit(true);
-
-      // Broadcast metadata update globally (optional)
+      // Broadcast update to anything listening (dashboard stats/banners)
       window.dispatchEvent(
         new CustomEvent("metadataUpdated", {
           detail: {
-            dailyCount: updatedDaily,
-            totalReads: result.totalReads,
-            maxFree: result.maxFree ?? maxFree,
+            dailyCount: quota.readsToday,
+            maxFree: limit,
+            totalReads: undefined, // not part of this endpoint but reserved
           },
         })
       );
 
-      // Open original article in new tab
+      if (!quota.allowed) {
+        if (onPaywall) {
+          onPaywall({ storyId: story.id });
+        } else {
+          window.location.href = "/pricing";
+        }
+        return;
+      }
+
+      // Open original article
       if (story.url) {
         window.open(story.url, "_blank", "noopener,noreferrer");
       }
@@ -126,13 +112,11 @@ export default function StoryCard({
       setReading(false);
     }
   }
+
   useEffect(() => {
+    // Sync with global metadata events
     function onMeta(e: Event) {
-      const detail = (e as CustomEvent<{
-        dailyCount: number;
-        totalReads?: number;
-        maxFree?: number;
-      }>).detail;
+      const detail = (e as CustomEvent<{ dailyCount: number; totalReads?: number; maxFree?: number }>).detail;
       if (!detail) return;
       const left = Math.max((detail.maxFree ?? MAX_FALLBACK_FREE) - detail.dailyCount, 0);
       setReadsLeft(left);
@@ -156,9 +140,7 @@ export default function StoryCard({
       if (!res.ok) throw new Error("Save failed");
       setSaved(true);
       onSaved?.(story.id);
-      window.dispatchEvent(
-        new CustomEvent("favoriteAdded", { detail: { id: story.id } })
-      );
+      window.dispatchEvent(new CustomEvent("favoriteAdded", { detail: { id: story.id } }));
     } catch (e) {
       console.error("Failed to save story", e);
       setSaveError(true);
@@ -167,20 +149,9 @@ export default function StoryCard({
     }
   }
 
-  /**
-   * Optional fields may or may not exist on NewsStory.  We avoid casting the entire
-   * object to a dictionary (which causes TS2352 errors because NewsStory lacks an
-   * index signature) by using a tiny type guard.
-   */
-  function pickString<K extends string>(
-    obj: unknown,
-    key: K
-  ): string | undefined {
-    if (
-      typeof obj === "object" &&
-      obj !== null &&
-      Object.prototype.hasOwnProperty.call(obj, key)
-    ) {
+  // Tiny type guard helper for optional fields on story
+  function pickString<K extends string>(obj: unknown, key: K): string | undefined {
+    if (typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key)) {
       const v = (obj as Record<K, unknown>)[key];
       return typeof v === "string" ? v : undefined;
     }
@@ -194,43 +165,26 @@ export default function StoryCard({
   return (
     <article
       aria-labelledby={titleId}
-      className="relative w-full max-w-md p-5 border rounded-lg shadow-sm bg-white/70 dark:bg-zinc-900/60 backdrop-blur transition
-                 hover:shadow-md focus-within:shadow-md focus-within:ring-2 ring-blue-500
-                 fade-in"
+      className="relative w-full max-w-md p-5 border rounded-lg shadow-sm bg-white/70 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md focus-within:shadow-md focus-within:ring-2 ring-blue-500 fade-in"
       role="group"
     >
-      {/* Category / Source Row */}
       {(source || category) && (
         <div className="mb-2 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-400">
           {source && (
-            <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 font-medium">
-              {source}
-            </span>
+            <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 font-medium">{source}</span>
           )}
           {category && (
-            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-              {category}
-            </span>
+            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{category}</span>
           )}
         </div>
       )}
 
-      {/* Title */}
-      <h2
-        id={titleId}
-        className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100"
-      >
+      <h2 id={titleId} className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100">
         {story.title}
       </h2>
 
-      {/* Summary */}
-      {summary && (
-        <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-          {summary}
-        </p>
-      )}
+      {summary && <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{summary}</p>}
 
-      {/* External Link (non-metered small link) */}
       {story.url && (
         <div className="mb-4 text-xs">
           <Link
@@ -245,59 +199,45 @@ export default function StoryCard({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex items-center gap-3">
         {story.url && (
           <button
-            onClick={
-              overLimit
-                ? () =>
-                    onPaywall
-                      ? onPaywall({ storyId: story.id })
-                      : (window.location.href = "/pricing")
-                : handleRead
-            }
+            onClick={overLimit ? () => (onPaywall ? onPaywall({ storyId: story.id }) : (window.location.href = "/pricing")) : handleRead}
             disabled={reading || overLimit}
-            className={`relative inline-flex items-center px-3 py-1.5 rounded
-              text-sm font-medium transition
-              ${
-                overLimit
-                  ? "bg-gray-400 text-white cursor-not-allowed"
-                  : reading
-                  ? "bg-blue-300 text-white cursor-default"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              }`}
+            className={`relative inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
+              overLimit
+                ? "bg-gray-400 text-white cursor-not-allowed"
+                : reading
+                ? "bg-blue-300 text-white cursor-default"
+                : "bg-blue-600 hover:bg-blue-700 text-white"
+            }`}
             aria-disabled={reading || overLimit}
           >
             {reading && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Loading" />}
             {overLimit ? "Upgrade to continue" : "Read"}
             {readsLeft !== null && !overLimit && (
-              <span className="ml-2 text-[10px] font-normal opacity-80">
-                {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
-              </span>
+              <span className="ml-2 text-[10px] font-normal opacity-80">{readsLeft} free read{readsLeft === 1 ? "" : "s"} left</span>
             )}
           </button>
         )}
 
         <button
-            onClick={handleSave}
-            disabled={saved || saving}
-            className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition
-              ${
-                saved
-                  ? "bg-gray-400 text-white cursor-default"
-                  : saving
-                  ? "bg-green-400 text-white cursor-wait"
-                  : "bg-green-600 hover:bg-green-700 text-white"
-              }`}
-            aria-pressed={saved}
-          >
-            {saving && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Saving" />}
-            {saved ? "Saved" : saving ? "Saving…" : "Save"}
-          </button>
+          onClick={handleSave}
+          disabled={saved || saving}
+          className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
+            saved
+              ? "bg-gray-400 text-white cursor-default"
+              : saving
+              ? "bg-green-400 text-white cursor-wait"
+              : "bg-green-600 hover:bg-green-700 text-white"
+          }`}
+          aria-pressed={saved}
+        >
+          {saving && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Saving" />}
+          {saved ? "Saved" : saving ? "Saving…" : "Save"}
+        </button>
       </div>
 
-      {/* Inline feedback */}
       <div className="mt-3 min-h-[1rem] text-xs">
         {readError && (
           <p className="text-red-600 dark:text-red-400" role="alert">
@@ -305,35 +245,21 @@ export default function StoryCard({
           </p>
         )}
         {saveError && !saved && (
-          <button
-            onClick={handleSave}
-            className="text-red-600 dark:text-red-400 underline"
-          >
+          <button onClick={handleSave} className="text-red-600 dark:text-red-400 underline">
             Retry save
           </button>
         )}
       </div>
 
-      {/* Saved visual marker */}
       {saved && (
-        <div
-          className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500"
-          aria-label="Story saved"
-          title="Story saved"
-        />
+        <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500" aria-label="Story saved" title="Story saved" />
       )}
     </article>
   );
 }
 
-/* Reusable spinner component (keeps markup tidy) */
-function Spinner({
-  className = "h-4 w-4",
-  ariaLabel = "Loading",
-}: {
-  className?: string;
-  ariaLabel?: string;
-}) {
+// Local tiny spinner
+function Spinner({ className = "h-4 w-4", ariaLabel = "Loading" }: { className?: string; ariaLabel?: string }) {
   return (
     <svg
       className={`animate-spin ${className}`}
@@ -343,19 +269,8 @@ function Spinner({
       role="status"
       aria-label={ariaLabel}
     >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"
-      />
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
     </svg>
   );
 }

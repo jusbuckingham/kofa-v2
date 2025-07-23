@@ -3,47 +3,56 @@
 import React from "react";
 import { useQuota } from "./ReadQuotaContext";
 
-type Props = {
+interface BannerProps {
   className?: string;
-};
+}
 
-const ReadQuotaBanner: React.FC<Props> = ({ className }) => {
+export default function ReadQuotaBanner({ className }: BannerProps) {
   const quota = useQuota();
-  if (!quota) return null; // handle null/undefined from context safely
-  const { remaining, limit, paywalled } = quota;
-  const safeRemaining = remaining ?? 0;
+  const { remaining, limit } = quota;
+  // Some code paths of ReadQuotaContext may not supply a subscription flag.
+  // Derive it defensively so TypeScript is happy even if the key is missing.
+  const hasActiveSub = (quota as { hasActiveSub?: boolean }).hasActiveSub ?? false;
 
-  // Hide if unlimited or already subscribed
-  if (limit === 0 || paywalled === false) return null;
+  // If user is Pro (or quota not yet loaded), don't show the banner
+  if (hasActiveSub || remaining == null || limit == null) return null;
+
+  const used = Math.max(0, limit - remaining);
+  const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+
+  const handleUpgrade = async () => {
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data: { url?: string; error?: string } = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        console.error("No checkout url returned", data);
+      }
+    } catch (e) {
+      console.error("Upgrade failed", e);
+    }
+  };
 
   return (
-    <div
-      role="alert"
-      className={
-        className ??
-        "mb-4 rounded-md bg-yellow-100 px-4 py-3 text-sm text-yellow-800"
-      }
-    >
-      {safeRemaining > 0 ? (
-        <p>
-          You have <strong>{safeRemaining}</strong> free story
-          {safeRemaining === 1 ? "" : "ies"} left today (out of {limit}).{" "}
-          <a href="/pricing" className="underline hover:no-underline font-medium">
-            Go unlimited
-          </a>
-          .
-        </p>
-      ) : (
-        <p>
-          You’ve hit your free limit for today.{" "}
-          <a href="/pricing" className="underline hover:no-underline font-medium">
-            Upgrade to keep reading
-          </a>
-          .
-        </p>
-      )}
+    <div className={`rounded-md border border-yellow-300 bg-yellow-50 p-3 text-sm ${className ?? ""}`}>
+      <p className="mb-2">
+        You have <strong>{remaining}</strong> of <strong>{limit}</strong> free summaries left today.
+      </p>
+      <div className="mb-3 h-2 w-full overflow-hidden rounded bg-yellow-100">
+        <div className="h-full bg-yellow-400" style={{ width: `${percent}%` }} />
+      </div>
+      <button
+        type="button"
+        onClick={handleUpgrade}
+        className="rounded bg-blue-600 px-3 py-1 text-white hover:bg-blue-700"
+      >
+        Upgrade for unlimited reads
+      </button>
     </div>
   );
-};
-
-export default ReadQuotaBanner;
+}
