@@ -3,30 +3,27 @@
 import React from "react";
 import { useQuota } from "./ReadQuotaContext";
 
-type ReadCounterProps = {
+interface ReadCounterProps {
   className?: string;
-};
-
-/**
- * Tiny badge / counter that shows how many free reads remain.
- * Returns null while quota is loading.
- */
-export function ReadCounter({ className }: ReadCounterProps) {
-  const { remaining, limit, paywalled } = useQuota();
-
-  if (remaining === null) return null;
-
-  const text = paywalled
-    ? "Limit reached"
-    : `${remaining}/${limit} free reads left`;
-
-  return (
-    <span
-      className={`inline-block rounded bg-gray-800 px-2 py-0.5 text-xs text-white ${className ?? ""}`}
-    >
-      {text}
-    </span>
-  );
 }
 
-export default ReadCounter;
+export function ReadCounter({ className }: ReadCounterProps) {
+  const { remaining, limit, hasActiveSub } = useQuota();
+
+  // If quota hasn’t loaded yet, render nothing
+  if (remaining === null) {
+    return null;
+  }
+
+  // For subscribers, show unlimited reads
+  if (hasActiveSub) {
+    return <div className={className}>Unlimited reads</div>;
+  }
+
+  // For non-subscribers, show the remaining count
+  return (
+    <div className={className}>
+      {remaining} of {limit} reads left today
+    </div>
+  );
+}
