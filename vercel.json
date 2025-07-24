@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/fetch-news",
+      "path": "/api/news/fetch",
       "schedule": "*/15 * * * *"
     }
   ]

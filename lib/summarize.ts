@@ -34,3 +34,5 @@ export async function summarizeWithPerspective(content: string): Promise<string>
     }
   }
 }
+// Allow default import for summarization helper
+export default summarizeWithPerspective;
