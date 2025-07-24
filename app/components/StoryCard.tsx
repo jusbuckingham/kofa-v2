@@ -158,7 +158,7 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
     return undefined;
   }
 
-  const summary = pickString(story, "summary") ?? story.description;
+  const summary = pickString(story, "summary") ?? "";
   const source = pickString(story, "source");
   const category = pickString(story, "category");
 
