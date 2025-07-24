@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useQuota } from "./ReadQuotaContext";
 
 export default function PaywallBanner() {
-  const { remaining, limit, paywalled } = useQuota();
+  const { remaining, limit, hasActiveSub } = useQuota();
 
-  const show = paywalled || (typeof remaining === "number" && remaining <= 0);
+  const show = !hasActiveSub && typeof remaining === "number" && remaining <= 0;
 
   if (!show) return null;
 
