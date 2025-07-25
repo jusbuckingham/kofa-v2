@@ -187,3 +187,180 @@ middleware.ts                     # Route protection (/dashboard, /api/favorites
 ## 📄 License
 
 MIT © 2025 Jus Buckingham
+
+# Kofa
+
+**Black culturally conscious summaries of the latest news.**
+
+Kofa lets anyone read **3 AI‑summarized stories per day for free**, and unlocks **unlimited reads with a paid subscription**.
+
+---
+
+## 🔗 Quick Links
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [Getting Started](#-getting-started)
+- [Environment Variables](#-environment-variables)
+- [Project Structure](#-project-structure)
+- [Usage Flows](#-usage-flows)
+- [Admin Tools](#-admin-tools)
+- [Roadmap & Ideas](#-roadmap--ideas)
+
+---
+
+## ✨ Features
+
+- **News Ingestion**: Fetch RSS feeds, summarize with OpenAI, store in MongoDB
+- **Public Home Page**: Infinite scroll of today’s top stories, skeleton loaders, source badges
+- **Metered Paywall**: 3 free reads/day; unlimited reads for subscribers
+- **Auth**: Email magic-link via NextAuth
+- **Favorites**: Save / Unsave stories; view saved items in `/dashboard`
+- **Billing**: Stripe Checkout + Webhooks to manage subscriptions
+- **Admin Tools**: Manual fetch and cleanup endpoints, simple admin UI
+
+---
+
+## 🧱 Tech Stack
+
+- **Next.js 15 (App Router, TypeScript)**
+- **MongoDB Atlas** (official Node.js driver)
+- **NextAuth v4** (Email provider)
+- **Stripe** (Checkout + Webhooks)
+- **Tailwind CSS**
+- **Vercel** (hosting + cron jobs)
+
+---
+
+## 🚀 Getting Started
+
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/jusbuckingham/kofa-v2.git
+   cd kofa-v2
+   ```
+2. **Install dependencies**
+   ```bash
+   npm install
+   # or: yarn install
+   ```
+3. **Create `.env.local`** (see next section)
+4. **Run in development**
+   ```bash
+   npm run dev
+   ```
+5. Visit <http://localhost:3000>
+
+---
+
+## 🔐 Environment Variables
+
+Create a file named `.env.local` in the project root with the following:
+
+```env
+# MongoDB / OpenAI
+MONGODB_URI=<your-mongodb-connection-string>
+MONGODB_DB_NAME=kofa
+OPENAI_API_KEY=<your-openai-key>
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=<random-string>
+EMAIL_SERVER_HOST=<smtp-host>
+EMAIL_SERVER_PORT=<smtp-port>
+EMAIL_SERVER_USER=<smtp-username>
+EMAIL_SERVER_PASSWORD=<smtp-password>
+EMAIL_FROM="Kofa <no-reply@yourdomain.com>"
+
+# Stripe
+STRIPE_SECRET_KEY=<your-stripe-secret>
+STRIPE_PRO_PRICE_ID=<your-stripe-price-id>
+STRIPE_WEBHOOK_SECRET=<your-webhook-secret>
+
+# Public
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+
+# Quota
+FREE_READS_PER_DAY=3
+
+# Cleanup
+CLEANUP_DAYS=30
+```
+
+> **Tip:** Generate secrets with `openssl rand -hex 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+
+---
+
+## 📂 Project Structure
+
+```
+app/
+├─ layout.tsx         # Root layout, providers, header
+├─ page.tsx           # Home page with infinite scroll
+├─ signin/page.tsx    # Sign-in (magic link + demo)
+├─ dashboard/page.tsx # Favorites dashboard
+├─ admin/
+│  ├─ AdminPanel.tsx  # Client UI for manual tools
+│  └─ page.tsx        # Protected admin page
+├─ api/
+│  ├─ auth/[...nextauth]/route.ts
+│  ├─ news/
+│  │  ├─ fetch/route.ts
+│  │  └─ get/route.ts
+│  ├─ favorites/route.ts
+│  ├─ admin/
+│  │  ├─ fetch/route.ts
+│  │  └─ cleanup/route.ts
+│  ├─ user/
+│  │  ├─ read/route.ts
+│  │  └─ metadata/route.ts
+│  └─ stripe/
+│     ├─ checkout/route.ts
+│     └─ webhooks/route.ts
+lib/
+├─ mongodb.ts         # MongoDB client
+├─ fetchNews.ts       # RSS → OpenAI → Mongo pipeline
+├─ summarize.ts       # OpenAI summarization logic
+├─ auth.ts            # NextAuth options
+└─ quota.ts           # Quota helpers
+components/
+└─ ...                # Reusable UI components
+```
+
+---
+
+## 🚦 Usage Flows
+
+### Public & Paywall
+1. Unauthenticated users can read up to `FREE_READS_PER_DAY` stories.
+2. Each view calls `POST /api/user/read` to increment your count.
+3. At limit, `ReadQuotaBanner` appears with a link to pricing.
+4. Subscribers (`hasActiveSub`) bypass the meter.
+
+### Favorites
+- Heart icon toggles via `POST/DELETE /api/favorites`.
+- `/dashboard` lists saved stories (requires auth).
+
+---
+
+## 🛠️ Admin Tools
+
+Visit `/admin` (requires auth) to:
+- **Run Fetch Pipeline** (`/api/admin/fetch`)
+- **Cleanup Old Stories** (`/api/admin/cleanup`)
+
+
+---
+
+## 🗺 Roadmap & Ideas
+
+- Topic filters & search
+- Dark mode / theming
+- Commenting & community notes
+- Multiple pricing tiers
+- Mobile app & PWA
+
+---
+
+## 📄 License
+
+MIT © 2025 Jus Buckingham
