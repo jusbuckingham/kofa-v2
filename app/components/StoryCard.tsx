@@ -14,13 +14,16 @@ import type { NewsStory } from "../types";
 interface StoryCardProps {
   story: NewsStory;
   isSaved?: boolean;
-  onSaved?: (storyId: string | number) => void;
+  onSaved?: (storyId: string) => void;
   onPaywall?: (context?: { storyId: string | number }) => void; // trigger paywall modal instead of hard redirect
 }
 
 export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }: StoryCardProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(isSaved);
+  useEffect(() => {
+    setSaved(isSaved);
+  }, [isSaved]);
   const [reading, setReading] = useState(false);
   const [readsLeft, setReadsLeft] = useState<number | null>(null);
   const [saveError, setSaveError] = useState(false);
@@ -127,25 +130,44 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
     return () => window.removeEventListener("metadataUpdated", onMeta);
   }, []);
 
-  async function handleSave() {
-    if (saving || saved) return;
+  async function handleToggle() {
+    if (saving) return;
     setSaving(true);
     setSaveError(false);
     try {
-      const res = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ story }),
+      const method = saved ? 'DELETE' : 'POST';
+      const res = await fetch('/api/favorites', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyId: story.id }),
       });
-      if (!res.ok) throw new Error("Save failed");
-      setSaved(true);
+      if (!res.ok) throw new Error('Favorite toggle failed');
+      setSaved(!saved);
       onSaved?.(story.id);
-      window.dispatchEvent(new CustomEvent("favoriteAdded", { detail: { id: story.id } }));
+      window.dispatchEvent(
+        new CustomEvent(
+          saved ? 'favoriteRemoved' : 'favoriteAdded',
+          { detail: { id: story.id } }
+        )
+      );
     } catch (e) {
-      console.error("Failed to save story", e);
+      console.error('Failed to toggle favorite', e);
       setSaveError(true);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleShare() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: story.title, url: story.url });
+      } else {
+        await navigator.clipboard.writeText(story.url);
+        alert('Link copied to clipboard');
+      }
+    } catch (err) {
+      console.error('Share failed', err);
     }
   }
 
@@ -222,19 +244,26 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
         )}
 
         <button
-          onClick={handleSave}
-          disabled={saved || saving}
+          onClick={handleToggle}
+          disabled={saving}
+          aria-pressed={saved}
           className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
             saved
-              ? "bg-gray-400 text-white cursor-default"
+              ? 'bg-gray-400 text-white cursor-default'
               : saving
-              ? "bg-green-400 text-white cursor-wait"
-              : "bg-green-600 hover:bg-green-700 text-white"
+              ? 'bg-green-400 text-white cursor-wait'
+              : 'bg-green-600 hover:bg-green-700 text-white'
           }`}
-          aria-pressed={saved}
         >
           {saving && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Saving" />}
-          {saved ? "Saved" : saving ? "Saving…" : "Save"}
+          {saved ? '❤️ Saved' : saving ? 'Saving…' : '🤍 Save'}
+        </button>
+        <button
+          onClick={handleShare}
+          className="inline-flex items-center px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+          aria-label="Share story"
+        >
+          🔗
         </button>
       </div>
 
@@ -245,7 +274,7 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
           </p>
         )}
         {saveError && !saved && (
-          <button onClick={handleSave} className="text-red-600 dark:text-red-400 underline">
+          <button onClick={handleToggle} className="text-red-600 dark:text-red-400 underline">
             Retry save
           </button>
         )}
