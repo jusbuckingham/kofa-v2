@@ -1,58 +1,31 @@
 // app/pricing/page.tsx
-"use client";
 
-import React, { useState } from "react";
-import PricingCard, { Plan } from "../components/PricingCard";
+import { Metadata } from 'next';
+import SubscribeButton from './SubscribeButton';
+
+export const metadata: Metadata = {
+  title: 'Pricing – Kofa',
+};
 
 export default function PricingPage() {
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleCheckout = async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/stripe/checkout", { method: "POST" });
-      const { url } = (await res.json()) as { url: string };
-      if (url) {
-        window.location.href = url;
-      } else {
-        console.error("No checkout URL returned");
-      }
-    } catch (err) {
-      console.error("Checkout error", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const plans: Plan[] = [
-    {
-      name: "Free Tier",
-      price: "3 free stories per day",
-      features: [
-        "Daily limit: 3 articles",
-        "Access to summaries",
-        "No subscription required",
-      ],
-      buttonText: "Current Plan",
-      disabled: true,
-    },
-    {
-      name: "Pro Tier",
-      price: "$9.99 / month",
-      features: ["Unlimited stories", "Priority support", "Cancel anytime"],
-      buttonText: isLoading ? "Loading..." : "Subscribe Now",
-      disabled: isLoading,
-      onClick: handleCheckout,
-    },
-  ];
+  const priceId = process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID;
+  if (!priceId) {
+    return (
+      <main className="max-w-md mx-auto p-4">
+        <h1 className="text-2xl font-bold mb-6">Pricing</h1>
+        <p className="text-red-600">Pricing is currently unavailable. Please try again later.</p>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
-      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-        {plans.map((plan) => (
-          <PricingCard key={plan.name} plan={plan} />
-        ))}
+    <main className="max-w-md mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-6">Pricing</h1>
+      <div className="border rounded-lg p-6 space-y-4">
+        <h2 className="text-xl font-semibold">Pro Plan</h2>
+        <p>Unlimited access to all summaries.</p>
+        <p className="text-2xl font-bold">$5/month</p>
+        <SubscribeButton priceId={priceId} />
       </div>
     </main>
   );
