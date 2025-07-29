@@ -1,11 +1,12 @@
+// app/page.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useQuota } from "./components/ReadQuotaContext";
-import ReadQuotaBanner from "./components/ReadQuotaBanner";
-import SkeletonCard from "./components/SkeletonCard";
-import StoryCard from "./components/StoryCard";
-import type { NewsStory } from "./types";
+import { useQuota } from "@/components/ReadQuotaContext";
+import ReadQuotaBanner from "@/components/ReadQuotaBanner";
+import SkeletonCard from "@/components/SkeletonCard";
+import StoryCard from "@/components/StoryCard";
+import type { NewsStory } from "@/types";
 
 const LIMIT = 5;
 
@@ -17,10 +18,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  // Favorites state
   const [savedSet, setSavedSet] = useState<Set<string>>(new Set());
 
-  // Fetch initial stories page
+  // Fetch stories
   useEffect(() => {
     let active = true;
     async function load() {
@@ -42,7 +42,7 @@ export default function HomePage() {
     return () => { active = false; };
   }, [offset]);
 
-  // Infinite scroll observer
+  // Infinite scroll
   useEffect(() => {
     const el = loaderRef.current;
     if (!el) return;
@@ -55,47 +55,46 @@ export default function HomePage() {
     return () => obs.disconnect();
   }, [loading, total, offset]);
 
-  // Load saved favorites on mount
+  // Load favorites
   useEffect(() => {
     async function loadFavs() {
       try {
         const res = await fetch('/api/favorites');
         if (res.ok) {
           const favs = (await res.json()) as NewsStory[];
-          const ids = favs.map(s => s.id);
-          setSavedSet(new Set(ids));
+          setSavedSet(new Set(favs.map(s => s.id)));
         }
-      } catch (e) {
-        console.error('Failed to load favorites', e);
-      }
+      } catch {}
     }
     loadFavs();
   }, []);
 
-  // Handle favorite events dispatched by StoryCard
+  // Favorite events
   useEffect(() => {
-    function onAdded(e: CustomEvent) {
-      setSavedSet(prev => new Set(prev).add(e.detail.id));
-    }
-    function onRemoved(e: CustomEvent) {
+    const onAdded = (e: Event) => {
+      const ev = e as CustomEvent<{ id: string }>;
+      setSavedSet(prev => new Set(prev).add(ev.detail.id));
+    };
+    const onRemoved = (e: Event) => {
+      const ev = e as CustomEvent<{ id: string }>;
       setSavedSet(prev => {
         const next = new Set(prev);
-        next.delete(e.detail.id);
+        next.delete(ev.detail.id);
         return next;
       });
-    }
-    window.addEventListener('favoriteAdded', onAdded as EventListener);
-    window.addEventListener('favoriteRemoved', onRemoved as EventListener);
+    };
+    window.addEventListener('favoriteAdded', onAdded);
+    window.addEventListener('favoriteRemoved', onRemoved);
     return () => {
-      window.removeEventListener('favoriteAdded', onAdded as EventListener);
-      window.removeEventListener('favoriteRemoved', onRemoved as EventListener);
+      window.removeEventListener('favoriteAdded', onAdded);
+      window.removeEventListener('favoriteRemoved', onRemoved);
     };
   }, []);
 
   return (
     <main className="max-w-3xl mx-auto p-4">
       {!hasActiveSub && <ReadQuotaBanner />}
-      <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Stories</h2>
+      <h2 className="text-2xl font-bold mb-4">Today's Top Stories</h2>
       <ul className="space-y-6">
         {stories.map(story => (
           <StoryCard
@@ -105,19 +104,14 @@ export default function HomePage() {
             onSaved={(id: string) => {
               setSavedSet(prev => {
                 const next = new Set(prev);
-                if (next.has(id)) {
-                  next.delete(id);
-                } else {
-                  next.add(id);
-                }
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
                 return next;
               });
             }}
           />
         ))}
-        {loading && Array.from({ length: LIMIT }).map((_, i) => (
-          <SkeletonCard key={i} />
-        ))}
+        {loading && Array.from({ length: LIMIT }).map((_, i) => <SkeletonCard key={i} />)}
       </ul>
       <div ref={loaderRef} className="h-1" />
     </main>

@@ -1,4 +1,3 @@
-export default summarizeText;
 /**
  * lib/fetchNews.ts
  * Scaffolds the news pipeline: RSS fetch → OpenAI summarization → MongoDB store
@@ -63,3 +62,5 @@ export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
 
   return { inserted: insertedCount };
 }
+
+export default fetchAndStoreNews;

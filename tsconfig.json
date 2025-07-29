@@ -20,7 +20,10 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["*"]
+      "@/*": ["app/*"],
+      "@/components/*": ["app/components/*"],
+      "@/lib/*": ["lib/*"],
+      "@/types": ["app/types.ts"]
     },
     "plugins": [
       {

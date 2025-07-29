@@ -5,12 +5,22 @@ const openai = new OpenAI({
 });
 
 export async function summarizeWithPerspective(content: string): Promise<string> {
-  const prompt = `Summarize the following article from the perspective of a culturally conscious Black American. Highlight relevance to systemic injustice, racial equity, and community impact.\n\n${content}`;
+  // Prepare system+user messages for culturally conscious Black perspective
+  const messages = [
+    {
+      role: 'system',
+      content: 'You are an AI assistant that summarizes news articles through the lens of Black social movements and community impact. Provide concise summaries highlighting cultural significance, community implications, and historical context relevant to Black experiences.',
+    },
+    {
+      role: 'user',
+      content: `Summarize the following article:\n\n${content}`,
+    },
+  ] satisfies Parameters<typeof openai.chat.completions.create>[0]['messages'];
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
+      messages,
     });
     return response.choices[0]?.message?.content?.trim() || "";
   } catch (err: unknown) {
@@ -24,7 +34,7 @@ export async function summarizeWithPerspective(content: string): Promise<string>
     try {
       const fallback = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
+        messages,
       });
       return fallback.choices[0]?.message?.content?.trim() || "";
     } catch {
