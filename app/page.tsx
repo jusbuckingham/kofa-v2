@@ -94,7 +94,7 @@ export default function HomePage() {
   return (
     <main className="max-w-3xl mx-auto p-4">
       {!hasActiveSub && <ReadQuotaBanner />}
-      <h2 className="text-2xl font-bold mb-4">Today's Top Stories</h2>
+      <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Stories</h2>
       <ul className="space-y-6">
         {stories.map(story => (
           <StoryCard
