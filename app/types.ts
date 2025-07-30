@@ -1,8 +1,10 @@
-// app/types.ts
 export interface NewsStory {
   id: string;
   title: string;
-  url: string;
-  summary: string;
-  publishedAt: string;
+  url?: string;
+  summary?: string;
+  description?: string;
+  source?: string;
+  category?: string;
+  imageUrl?: string;  // <- this line
 }

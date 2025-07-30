@@ -2,6 +2,7 @@
 
 import React, { useState, useId, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import type { NewsStory } from "../types";
 
 /**
@@ -9,6 +10,7 @@ import type { NewsStory } from "../types";
  *  - summary?: string  (your culturally conscious summary; preferred over description)
  *  - source?: string   (publisher name)
  *  - category?: string (optional topical tag)
+ *  - imageUrl?: string (optional thumbnail/image URL)
  */
 
 interface StoryCardProps {
@@ -18,12 +20,31 @@ interface StoryCardProps {
   onPaywall?: (context?: { storyId: string | number }) => void; // trigger paywall modal instead of hard redirect
 }
 
-export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }: StoryCardProps) {
+function StoryImage({ src, alt }: { src: string; alt: string }) {
+  return (
+    <div className="mb-4 relative w-full h-48">
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        className="object-cover rounded-t-lg"
+      />
+    </div>
+  );
+}
+
+export default function StoryCard({
+  story,
+  isSaved = false,
+  onSaved,
+  onPaywall,
+}: StoryCardProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(isSaved);
   useEffect(() => {
     setSaved(isSaved);
   }, [isSaved]);
+
   const [reading, setReading] = useState(false);
   const [readsLeft, setReadsLeft] = useState<number | null>(null);
   const [saveError, setSaveError] = useState(false);
@@ -32,11 +53,6 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
   const MAX_FALLBACK_FREE = 3;
   const titleId = useId();
 
-  /**
-   * Hit the new quota endpoint that both checks and optionally increments the count.
-   *   GET  /api/user/read        -> { readsToday, limit, allowed, hasActiveSub }
-   *   POST /api/user/read        -> same payload, but increments when allowed
-   */
   async function hitQuotaEndpoint(options: { increment: boolean; storyId?: string | number }) {
     const { increment, storyId } = options;
     const endpoint = "/api/user/read";
@@ -48,7 +64,6 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
     });
 
     if (res.status === 402) {
-      // custom quota exceeded response
       const data = await res.json().catch(() => ({}));
       return { ...data, allowed: false } as {
         readsToday: number;
@@ -76,22 +91,15 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
     setReadError(null);
 
     try {
-      // Increment on the server and get the fresh numbers back
       const quota = await hitQuotaEndpoint({ increment: true, storyId: story.id });
-
       const limit = quota.limit ?? MAX_FALLBACK_FREE;
       const left = Math.max(limit - quota.readsToday, 0);
       setReadsLeft(left);
       setOverLimit(!quota.allowed || left === 0);
 
-      // Broadcast update to anything listening (dashboard stats/banners)
       window.dispatchEvent(
         new CustomEvent("metadataUpdated", {
-          detail: {
-            dailyCount: quota.readsToday,
-            maxFree: limit,
-            totalReads: undefined, // not part of this endpoint but reserved
-          },
+          detail: { dailyCount: quota.readsToday, maxFree: limit, totalReads: undefined },
         })
       );
 
@@ -104,7 +112,6 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
         return;
       }
 
-      // Open original article
       if (story.url) {
         window.open(story.url, "_blank", "noopener,noreferrer");
       }
@@ -117,9 +124,8 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
   }
 
   useEffect(() => {
-    // Sync with global metadata events
     function onMeta(e: Event) {
-      const detail = (e as CustomEvent<{ dailyCount: number; totalReads?: number; maxFree?: number }>).detail;
+      const detail = (e as CustomEvent<{ dailyCount: number; maxFree?: number }>).detail;
       if (!detail) return;
       const left = Math.max((detail.maxFree ?? MAX_FALLBACK_FREE) - detail.dailyCount, 0);
       setReadsLeft(left);
@@ -134,24 +140,24 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
     if (saving) return;
     setSaving(true);
     setSaveError(false);
+
     try {
-      const method = saved ? 'DELETE' : 'POST';
-      const res = await fetch('/api/favorites', {
+      const method = saved ? "DELETE" : "POST";
+      const res = await fetch("/api/favorites", {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId: story.id }),
       });
-      if (!res.ok) throw new Error('Favorite toggle failed');
+      if (!res.ok) throw new Error("Favorite toggle failed");
       setSaved(!saved);
       onSaved?.(story.id);
       window.dispatchEvent(
-        new CustomEvent(
-          saved ? 'favoriteRemoved' : 'favoriteAdded',
-          { detail: { id: story.id } }
-        )
+        new CustomEvent(saved ? "favoriteRemoved" : "favoriteAdded", {
+          detail: { id: story.id },
+        })
       );
     } catch (e) {
-      console.error('Failed to toggle favorite', e);
+      console.error("Failed to toggle favorite", e);
       setSaveError(true);
     } finally {
       setSaving(false);
@@ -164,14 +170,13 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
         await navigator.share({ title: story.title, url: story.url });
       } else {
         await navigator.clipboard.writeText(story.url);
-        alert('Link copied to clipboard');
+        alert("Link copied to clipboard");
       }
     } catch (err) {
-      console.error('Share failed', err);
+      console.error("Share failed", err);
     }
   }
 
-  // Tiny type guard helper for optional fields on story
   function pickString<K extends string>(obj: unknown, key: K): string | undefined {
     if (typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key)) {
       const v = (obj as Record<K, unknown>)[key];
@@ -193,19 +198,39 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
       {(source || category) && (
         <div className="mb-2 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-400">
           {source && (
-            <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 font-medium">{source}</span>
+            <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 font-medium">
+              {source}
+            </span>
           )}
           {category && (
-            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{category}</span>
+            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+              {category}
+            </span>
           )}
         </div>
       )}
 
-      <h2 id={titleId} className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100">
+      <h2
+        id={titleId}
+        className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100"
+      >
         {story.title}
       </h2>
 
-      {summary && <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{summary}</p>}
+      {story.imageUrl && <StoryImage src={story.imageUrl} alt={story.title} />}
+
+      {summary && (
+        <ul className="list-disc list-inside space-y-1 mb-4">
+          {summary
+            .split(/(?:\r?\n)|(?:\s*-\s*)/)
+            .filter(Boolean)
+            .map((point, idx) => (
+              <li key={idx} className="text-sm leading-relaxed">
+                {point.trim()}
+              </li>
+            ))}
+        </ul>
+      )}
 
       {story.url && (
         <div className="mb-4 text-xs">
@@ -224,7 +249,11 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
       <div className="flex items-center gap-3">
         {story.url && (
           <button
-            onClick={overLimit ? () => (onPaywall ? onPaywall({ storyId: story.id }) : (window.location.href = "/pricing")) : handleRead}
+            onClick={
+              overLimit
+                ? () => (onPaywall ? onPaywall({ storyId: story.id }) : (window.location.href = "/pricing"))
+                : handleRead
+            }
             disabled={reading || overLimit}
             className={`relative inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
               overLimit
@@ -238,7 +267,9 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
             {reading && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Loading" />}
             {overLimit ? "Upgrade to continue" : "Read"}
             {readsLeft !== null && !overLimit && (
-              <span className="ml-2 text-[10px] font-normal opacity-80">{readsLeft} free read{readsLeft === 1 ? "" : "s"} left</span>
+              <span className="ml-2 text-[10px] font-normal opacity-80">
+                {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
+              </span>
             )}
           </button>
         )}
@@ -249,15 +280,16 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
           aria-pressed={saved}
           className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
             saved
-              ? 'bg-gray-400 text-white cursor-default'
+              ? "bg-gray-400 text-white cursor-default"
               : saving
-              ? 'bg-green-400 text-white cursor-wait'
-              : 'bg-green-600 hover:bg-green-700 text-white'
+              ? "bg-green-400 text-white cursor-wait"
+              : "bg-green-600 hover:bg-green-700 text-white"
           }`}
         >
           {saving && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Saving" />}
-          {saved ? '❤️ Saved' : saving ? 'Saving…' : '🤍 Save'}
+          {saved ? "❤️ Saved" : saving ? "Saving…" : "🤍 Save"}
         </button>
+
         <button
           onClick={handleShare}
           className="inline-flex items-center px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
@@ -281,14 +313,23 @@ export default function StoryCard({ story, isSaved = false, onSaved, onPaywall }
       </div>
 
       {saved && (
-        <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500" aria-label="Story saved" title="Story saved" />
+        <div
+          className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500"
+          aria-label="Story saved"
+          title="Story saved"
+        />
       )}
     </article>
   );
 }
 
-// Local tiny spinner
-function Spinner({ className = "h-4 w-4", ariaLabel = "Loading" }: { className?: string; ariaLabel?: string }) {
+function Spinner({
+  className = "h-4 w-4",
+  ariaLabel = "Loading",
+}: {
+  className?: string;
+  ariaLabel?: string;
+}) {
   return (
     <svg
       className={`animate-spin ${className}`}
