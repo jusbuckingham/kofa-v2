@@ -1,48 +1,50 @@
-import OpenAI, { type APIError } from "openai";
+// lib/summarize.ts
+import OpenAI from "openai";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function summarizeWithPerspective(content: string): Promise<string> {
-  // Prepare system+user messages for culturally conscious Black perspective
-  const messages = [
+export default async function summarizeWithPerspective(
+  text: string
+): Promise<string> {
+  // Construct messages emphasizing Black cultural lens and bullet-point output
+  const messages: { role: string; content: string }[] = [
     {
-      role: 'system',
-      content: 'You are an AI assistant that summarizes news articles through the lens of Black social movements and community impact. Provide concise summaries highlighting cultural significance, community implications, and historical context relevant to Black experiences.',
+      role: "system",
+      content: `You are an expert journalist with deep knowledge of Black social movements and community impact. When summarizing, you produce exactly 7 concise bullet points that capture the core story without introductory phrases like "The article discusses". Each bullet should start with a bolded key fact or person name followed by a brief, to-the-point explanation.`,
     },
     {
-      role: 'user',
-      content: `Summarize the following article:\n\n${content}`,
-    },
-  ] satisfies Parameters<typeof openai.chat.completions.create>[0]['messages'];
+      role: "user",
+      content: `Summarize the following text through the lens of Black social movements and community impact:
 
+${text}`,
+    },
+  ];
+
+  // Use GPT-4 with fallback
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: messages as any[],
+      temperature: 0.3,
     });
-    return response.choices[0]?.message?.content?.trim() || "";
-  } catch (err: unknown) {
-    const apiErr = err as APIError;
-    // If we hit quota on GPT-4o, bail out immediately
-    if (apiErr.code === "insufficient_quota") {
-      console.warn("OpenAI quota exceeded. Skipping summarization.");
-      return content;
-    }
-    console.warn("GPT-4o error, falling back to GPT-3.5-turbo:", err);
-    try {
+
+    // Normalize content to string
+    return (response.choices[0].message.content ?? "") as string;
+  } catch (error: unknown) {
+    // Check for insufficient_quota on error.cause
+    const err = error as { cause?: { code?: unknown } };
+    if (err.cause?.code === "insufficient_quota") {
       const fallback = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
-        messages,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages: messages as any[],
+        temperature: 0.3,
       });
-      return fallback.choices[0]?.message?.content?.trim() || "";
-    } catch {
-      // On any fallback error (including quota), return raw content
-      console.warn("GPT-3.5 fallback error. Returning raw content.");
-      return content;
+      return (fallback.choices[0].message.content ?? "") as string;
     }
+    throw error;
   }
 }
-// Allow default import for summarization helper
-export default summarizeWithPerspective;
