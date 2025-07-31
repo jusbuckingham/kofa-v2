@@ -15,7 +15,7 @@ export default async function summarizeWithPerspective(
       content: `You are an expert journalist steeped in Black American history and culture. Provide exactly 3 concise bullet points, each on its own line prefixed with "- ", with no asterisks or colons. Each bullet point may contain no more than 3 sentences.
 1) Summary of the news story
 2) Explain any advantages for Black Americans
-3) Explain and dis-advantages for Black Americans`,
+3) Explain any dis-advantages for Black Americans`,
     },
     {
       role: "user",
