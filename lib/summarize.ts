@@ -12,7 +12,7 @@ export default async function summarizeWithPerspective(
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
-      content: `Output 3 bullet points, each on its own line starting with "- ". No asterisks or colons. Up to 4 sentences per point covering:
+      content: `Output 3 bullet points, each on its own line starting with "- ". No asterisks or colons. Up to 140 characters per point covering:
 1) Who is involved and where
 2) What is happening
 3) Impact on Black Americans`,
