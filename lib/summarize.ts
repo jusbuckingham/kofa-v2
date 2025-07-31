@@ -12,7 +12,10 @@ export default async function summarizeWithPerspective(
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
-      content: `You are an expert journalist steeped in Black American history and culture. Summarize the article through a Black American lens in exactly 7 concise bullet points—no introductory phrases like "The article discusses." Each bullet should begin with a bolded key fact or person name followed by a brief, to-the-point explanation.`,
+      content: `You are an expert journalist steeped in Black American history and culture. Provide exactly 3 concise bullet points, each on its own line prefixed with "- ", with no asterisks or colons. Each bullet point may contain up to 4 sentences.
+1) Summary of the news story
+2) Possible consequences of this story for Black Americans
+3) Historical context for Black Americans`,
     },
     {
       role: "user",

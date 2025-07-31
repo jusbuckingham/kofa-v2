@@ -194,15 +194,18 @@ export default function StoryCard({
       )}
 
       {summary && (
-        <ul className="list-disc list-inside space-y-1 mb-4">
+        <ul className="list-none space-y-2 mb-4">
           {summary
             .split(/(?:\r?\n)|(?:\s*[-*]\s*)/)
             .map((pt) => pt.replace(/^[-*]\s*/, "").trim())
             .filter(Boolean)
-            .slice(0, 7)
+            .slice(0, 3)
             .map((point, idx) => (
-              <li key={idx} className="text-sm leading-relaxed break-words">
-                {point}
+              <li key={idx} className="flex items-start">
+                <span className="mr-2 mt-1 text-blue-600">•</span>
+                <p className="text-sm leading-relaxed break-words flex-1">
+                  {point}
+                </p>
               </li>
             ))}
         </ul>
