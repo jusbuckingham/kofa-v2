@@ -167,7 +167,7 @@ export default function StoryCard({
   const summary = pickString(story, "summary") ?? "";
   const source = pickString(story, "source");
   const category = pickString(story, "category");
-  const dateStr = pickString(story, "date") ?? pickString(story, "publishedAt");
+  const dateStr = pickString(story, "publishedAt") ?? "";
 
   return (
     <article

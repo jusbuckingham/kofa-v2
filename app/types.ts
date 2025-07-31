@@ -7,4 +7,5 @@ export interface NewsStory {
   source?: string;
   category?: string;
   imageUrl?: string;  // <- this line
+  publishedAt?: string;
 }
