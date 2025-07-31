@@ -4,6 +4,7 @@ import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { NewsStory } from "../types";
+import formatDate from "../utils/formatDate";
 
 interface StoryImageProps {
   src: string;
@@ -166,6 +167,7 @@ export default function StoryCard({
   const summary = pickString(story, "summary") ?? "";
   const source = pickString(story, "source");
   const category = pickString(story, "category");
+  const dateStr = pickString(story, "date") ?? pickString(story, "publishedAt");
 
   return (
     <article
@@ -188,6 +190,14 @@ export default function StoryCard({
       >
         {story.title}
       </h2>
+      {dateStr && (
+        <time
+          dateTime={dateStr}
+          className="text-xs text-gray-500 dark:text-gray-400 mb-2 block"
+        >
+          {formatDate(dateStr)}
+        </time>
+      )}
 
       {story.imageUrl && (
         <StoryImage src={story.imageUrl!} alt={story.title} />
