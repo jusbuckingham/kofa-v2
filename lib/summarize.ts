@@ -12,14 +12,14 @@ export default async function summarizeWithPerspective(
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
-      content: `You are an expert journalist steeped in Black American history and culture. Provide exactly 3 concise bullet points, each on its own line prefixed with "- ", with no asterisks or colons. Each bullet point may contain no more than 140 characters.
-1) What is going on
-2) What advantages for Black Americans
-3) What dis-advantages for Black Americans`,
+      content: `Output 3 bullet points, each on its own line starting with "- ". No asterisks or colons. Up to 4 sentences per point covering:
+1) Who is involved and where
+2) What is happening
+3) Impact on Black Americans`,
     },
     {
       role: "user",
-      content: `Summarize the following text concisely through the lens of Black social movements and community impact:
+      content: `Summarize the following text focusing on Black social movements and community impact:
 
 ${text}`,
     },
