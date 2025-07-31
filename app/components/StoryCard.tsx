@@ -196,7 +196,7 @@ export default function StoryCard({
       {summary && (
         <ul className="list-none space-y-2 mb-4">
           {summary
-            .split(/(?:\r?\n)|(?:\s*[-*]\s*)/)
+            .split(/\r?\n/)
             .map((pt) => pt.replace(/^[-*]\s*/, "").trim())
             .filter(Boolean)
             .slice(0, 3)
