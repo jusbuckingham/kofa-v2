@@ -1,26 +1,16 @@
 "use client";
 
-import React, { useState, useId, useEffect } from "react";
+import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { NewsStory } from "../types";
 
-/**
- * Extended NewsStory expectations (non-breaking):
- *  - summary?: string  (your culturally conscious summary; preferred over description)
- *  - source?: string   (publisher name)
- *  - category?: string (optional topical tag)
- *  - imageUrl?: string (optional thumbnail/image URL)
- */
-
-interface StoryCardProps {
-  story: NewsStory;
-  isSaved?: boolean;
-  onSaved?: (storyId: string) => void;
-  onPaywall?: (context?: { storyId: string | number }) => void; // trigger paywall modal instead of hard redirect
+interface StoryImageProps {
+  src: string;
+  alt: string;
 }
 
-function StoryImage({ src, alt }: { src: string; alt: string }) {
+function StoryImage({ src, alt }: StoryImageProps) {
   return (
     <div className="mb-4 relative w-full h-48">
       <Image
@@ -31,6 +21,13 @@ function StoryImage({ src, alt }: { src: string; alt: string }) {
       />
     </div>
   );
+}
+
+interface StoryCardProps {
+  story: NewsStory;
+  isSaved?: boolean;
+  onSaved?: (storyId: string) => void;
+  onPaywall?: (context?: { storyId: string | number }) => void;
 }
 
 export default function StoryCard({
@@ -55,8 +52,7 @@ export default function StoryCard({
 
   async function hitQuotaEndpoint(options: { increment: boolean; storyId?: string | number }) {
     const { increment, storyId } = options;
-    const endpoint = "/api/user/read";
-    const res = await fetch(endpoint, {
+    const res = await fetch("/api/user/read", {
       method: increment ? "POST" : "GET",
       headers: increment ? { "Content-Type": "application/json" } : undefined,
       body: increment ? JSON.stringify({ increment: true, storyId }) : undefined,
@@ -72,11 +68,7 @@ export default function StoryCard({
         hasActiveSub?: boolean;
       };
     }
-
-    if (!res.ok) {
-      throw new Error(`Quota check failed (${res.status})`);
-    }
-
+    if (!res.ok) throw new Error(`Quota check failed (${res.status})`);
     return (await res.json()) as {
       readsToday: number;
       limit: number;
@@ -99,25 +91,18 @@ export default function StoryCard({
 
       window.dispatchEvent(
         new CustomEvent("metadataUpdated", {
-          detail: { dailyCount: quota.readsToday, maxFree: limit, totalReads: undefined },
+          detail: { dailyCount: quota.readsToday, maxFree: limit },
         })
       );
 
       if (!quota.allowed) {
-        if (onPaywall) {
-          onPaywall({ storyId: story.id });
-        } else {
-          window.location.href = "/pricing";
-        }
+        if (onPaywall) onPaywall({ storyId: story.id });
+        else window.location.href = "/pricing";
         return;
       }
-
-      if (story.url) {
-        window.open(story.url, "_blank", "noopener,noreferrer");
-      }
+      if (story.url) window.open(story.url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to open story";
-      setReadError(message);
+      setReadError(err instanceof Error ? err.message : "Failed to open story");
     } finally {
       setReading(false);
     }
@@ -126,12 +111,10 @@ export default function StoryCard({
   useEffect(() => {
     function onMeta(e: Event) {
       const detail = (e as CustomEvent<{ dailyCount: number; maxFree?: number }>).detail;
-      if (!detail) return;
       const left = Math.max((detail.maxFree ?? MAX_FALLBACK_FREE) - detail.dailyCount, 0);
       setReadsLeft(left);
       setOverLimit(left === 0);
     }
-
     window.addEventListener("metadataUpdated", onMeta);
     return () => window.removeEventListener("metadataUpdated", onMeta);
   }, []);
@@ -156,8 +139,7 @@ export default function StoryCard({
           detail: { id: story.id },
         })
       );
-    } catch (e) {
-      console.error("Failed to toggle favorite", e);
+    } catch {
       setSaveError(true);
     } finally {
       setSaving(false);
@@ -166,23 +148,19 @@ export default function StoryCard({
 
   async function handleShare() {
     try {
-      if (navigator.share) {
-        await navigator.share({ title: story.title, url: story.url });
-      } else {
-        await navigator.clipboard.writeText(story.url);
+      if (navigator.share) await navigator.share({ title: story.title, url: story.url! });
+      else {
+        await navigator.clipboard.writeText(story.url ?? "");
         alert("Link copied to clipboard");
       }
-    } catch (err) {
-      console.error("Share failed", err);
+    } catch {
+      // no-op
     }
   }
 
-  function pickString<K extends string>(obj: unknown, key: K): string | undefined {
-    if (typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key)) {
-      const v = (obj as Record<K, unknown>)[key];
-      return typeof v === "string" ? v : undefined;
-    }
-    return undefined;
+  function pickString<T>(obj: T, key: keyof T): string | undefined {
+    const value = obj[key];
+    return typeof value === "string" ? value : undefined;
   }
 
   const summary = pickString(story, "summary") ?? "";
@@ -192,20 +170,14 @@ export default function StoryCard({
   return (
     <article
       aria-labelledby={titleId}
-      className="relative w-full max-w-md p-5 border rounded-lg shadow-sm bg-white/70 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md focus-within:shadow-md focus-within:ring-2 ring-blue-500 fade-in"
+      className="relative w-full max-w-md p-5 border rounded-lg shadow-sm bg-white/70 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md focus-within:ring-2 ring-blue-500 fade-in"
       role="group"
     >
       {(source || category) && (
         <div className="mb-2 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-400">
-          {source && (
-            <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 font-medium">
-              {source}
-            </span>
-          )}
+          {source && <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800">{source}</span>}
           {category && (
-            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-              {category}
-            </span>
+            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40">{category}</span>
           )}
         </div>
       )}
@@ -217,16 +189,20 @@ export default function StoryCard({
         {story.title}
       </h2>
 
-      {story.imageUrl && <StoryImage src={story.imageUrl} alt={story.title} />}
+      {story.imageUrl && (
+        <StoryImage src={story.imageUrl!} alt={story.title} />
+      )}
 
       {summary && (
         <ul className="list-disc list-inside space-y-1 mb-4">
           {summary
-            .split(/(?:\r?\n)|(?:\s*-\s*)/)
+            .split(/(?:\r?\n)|(?:\s*[-*]\s*)/)
+            .map((pt) => pt.replace(/^[-*]\s*/, "").trim())
             .filter(Boolean)
+            .slice(0, 7)
             .map((point, idx) => (
-              <li key={idx} className="text-sm leading-relaxed">
-                {point.trim()}
+              <li key={idx} className="text-sm leading-relaxed break-words">
+                {point}
               </li>
             ))}
         </ul>
@@ -249,25 +225,32 @@ export default function StoryCard({
       <div className="flex items-center gap-3">
         {story.url && (
           <button
-            onClick={
-              overLimit
-                ? () => (onPaywall ? onPaywall({ storyId: story.id }) : (window.location.href = "/pricing"))
-                : handleRead
-            }
+            onClick={overLimit ? () => onPaywall?.({ storyId: story.id }) : handleRead}
             disabled={reading || overLimit}
-            className={`relative inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
+            className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
               overLimit
                 ? "bg-gray-400 text-white cursor-not-allowed"
                 : reading
-                ? "bg-blue-300 text-white cursor-default"
+                ? "bg-blue-300 text-white"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
-            aria-disabled={reading || overLimit}
           >
-            {reading && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Loading" />}
+            {reading && (
+              <svg
+                className="animate-spin h-4 w-4 mr-2"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                role="status"
+                aria-label="Loading"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+              </svg>
+            )}
             {overLimit ? "Upgrade to continue" : "Read"}
             {readsLeft !== null && !overLimit && (
-              <span className="ml-2 text-[10px] font-normal opacity-80">
+              <span className="ml-2 text-[10px] opacity-80">
                 {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
               </span>
             )}
@@ -280,19 +263,31 @@ export default function StoryCard({
           aria-pressed={saved}
           className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
             saved
-              ? "bg-gray-400 text-white cursor-default"
+              ? "bg-gray-400 text-white"
               : saving
-              ? "bg-green-400 text-white cursor-wait"
+              ? "bg-green-400 text-white"
               : "bg-green-600 hover:bg-green-700 text-white"
           }`}
         >
-          {saving && <Spinner className="h-4 w-4 mr-2 text-white" ariaLabel="Saving" />}
+          {saving && (
+            <svg
+              className="animate-spin h-4 w-4 mr-2"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              role="status"
+              aria-label="Saving"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+            </svg>
+          )}
           {saved ? "❤️ Saved" : saving ? "Saving…" : "🤍 Save"}
         </button>
 
         <button
           onClick={handleShare}
-          className="inline-flex items-center px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+          className="inline-flex items-center px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
           aria-label="Share story"
         >
           🔗
@@ -300,47 +295,17 @@ export default function StoryCard({
       </div>
 
       <div className="mt-3 min-h-[1rem] text-xs">
-        {readError && (
-          <p className="text-red-600 dark:text-red-400" role="alert">
-            {readError}
-          </p>
-        )}
+        {readError && <p className="text-red-600 dark:text-red-400">{readError}</p>}
         {saveError && !saved && (
-          <button onClick={handleToggle} className="text-red-600 dark:text-red-400 underline">
+          <button onClick={handleToggle} className="text-red-600 underline">
             Retry save
           </button>
         )}
       </div>
 
       {saved && (
-        <div
-          className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500"
-          aria-label="Story saved"
-          title="Story saved"
-        />
+        <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500" />
       )}
     </article>
-  );
-}
-
-function Spinner({
-  className = "h-4 w-4",
-  ariaLabel = "Loading",
-}: {
-  className?: string;
-  ariaLabel?: string;
-}) {
-  return (
-    <svg
-      className={`animate-spin ${className}`}
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      role="status"
-      aria-label={ariaLabel}
-    >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-    </svg>
   );
 }

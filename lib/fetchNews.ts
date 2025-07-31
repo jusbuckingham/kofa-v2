@@ -4,7 +4,7 @@
  */
 import Parser from "rss-parser";
 import clientPromise from "@/lib/mongodb";
-import summarizeText from "@/lib/summarize";
+import summarizeWithPerspective from "@/lib/summarize";
 
 // Comma-separated list of RSS URLs in your .env.local
 const FEED_URLS = (process.env.FEED_URLS ?? "")
@@ -20,11 +20,13 @@ export interface StoryDoc {
   summary: string;
   publishedAt: Date;
   createdAt: Date;
+  imageUrl?: string;
 }
 
 export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
   const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
+  const dbName = process.env.MONGODB_DB_NAME ?? process.env.mongodb_db_name ?? "kofa";
+  const db = client.db(dbName);
   const stories = db.collection<StoryDoc>("stories");
 
   let insertedCount = 0;
@@ -43,7 +45,10 @@ export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
         // Summarize content snippet or summary field
         const textToSummarize =
           item.contentSnippet || item.content || item.summary || item.title || "";
-        const summary = await summarizeText(textToSummarize);
+        const summary = await summarizeWithPerspective(textToSummarize);
+
+        // attempt to pull an enclosure/image URL from the feed item
+        const imageUrl = item.enclosure?.url;
 
         const doc: StoryDoc = {
           title: item.title || "Untitled",
@@ -51,6 +56,7 @@ export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
           summary,
           publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
           createdAt: new Date(),
+          imageUrl,
         };
         await stories.insertOne(doc);
         insertedCount++;

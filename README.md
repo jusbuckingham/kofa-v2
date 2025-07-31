@@ -1,8 +1,8 @@
 # Kofa
 
-**Black culturally conscious summaries of the latest news.**
+**7 concise, Black-conscious bullet-point summaries of the latest news.**
 
-Kofa delivers AI-generated article summaries through the lens of Black social movements and community impact. Read **3 free stories per day** or subscribe for **unlimited access**.
+Kofa delivers AI-generated 7-point article summaries through the lens of Black social movements and community impact. Read **3 free stories per day** or subscribe for **unlimited access**.
 
 ---
 
@@ -61,13 +61,13 @@ Kofa delivers AI-generated article summaries through the lens of Black social mo
 ## 🚀 Core Features
 
 - **News Ingestion**: Fetch multiple RSS feeds, summarize with OpenAI, and store in MongoDB.
-- **Black-Conscious Summaries**: Prompts tuned for historical context and community impact.
+- **Black-Conscious Summaries**: AI-generated, 7-point bullet summaries emphasizing historical context and community impact.
 - **Metered Paywall**: 3 free reads per day for non-subscribers; unlimited for paying subscribers.
 - **Authentication**: Email magic link via NextAuth (with optional demo login in dev).
 - **Favorites Dashboard**: Save, view, and manage favorite stories at `/dashboard`.
 - **Billing**: Stripe Checkout integration and Webhooks to manage subscription state.
 - **Admin Tools**: Manual fetch and cleanup endpoints under `/api/admin`.
-- **Test Endpoint**: Call `/api/test-summarize` to validate the summarization prompt.
+- **Test Endpoint**: Call `/api/test-summarize` to validate the 7-point Black-conscious summarization prompt.
 
 ---
 

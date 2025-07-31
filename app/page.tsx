@@ -97,21 +97,27 @@ export default function HomePage() {
       <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Stories</h2>
       <ul className="space-y-6">
         {stories.map(story => (
-          <StoryCard
-            key={story.id}
-            story={story}
-            isSaved={savedSet.has(story.id)}
-            onSaved={(id: string) => {
-              setSavedSet(prev => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              });
-            }}
-          />
+          <li key={story.id}>
+            <StoryCard
+              story={story}
+              isSaved={savedSet.has(story.id)}
+              onSaved={(id: string) => {
+                setSavedSet(prev => {
+                  const next = new Set(prev);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                });
+              }}
+            />
+          </li>
         ))}
-        {loading && Array.from({ length: LIMIT }).map((_, i) => <SkeletonCard key={i} />)}
+        {loading &&
+          Array.from({ length: LIMIT }).map((_, i) => (
+            <li key={`skeleton-${i}`}>
+              <SkeletonCard />
+            </li>
+          ))}
       </ul>
       <div ref={loaderRef} className="h-1" />
     </main>
