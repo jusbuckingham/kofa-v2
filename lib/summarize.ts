@@ -12,14 +12,14 @@ export default async function summarizeWithPerspective(
   const messages: { role: string; content: string }[] = [
     {
       role: "system",
-      content: `You are an expert journalist steeped in Black American history and culture. Provide exactly 3 concise bullet points, each on its own line prefixed with "- ", with no asterisks or colons. Each bullet point may contain up to 4 sentences.
+      content: `You are an expert journalist steeped in Black American history and culture. Provide exactly 3 concise bullet points, each on its own line prefixed with "- ", with no asterisks or colons. Each bullet point may contain no more than 3 sentences.
 1) Summary of the news story
-2) Possible consequences of this story for Black Americans
-3) Historical context for Black Americans`,
+2) Explain any advantages for Black Americans
+3) Explain and dis-advantages for Black Americans`,
     },
     {
       role: "user",
-      content: `Summarize the following text through the lens of Black social movements and community impact:
+      content: `Summarize the following text concisely through the lens of Black social movements and community impact:
 
 ${text}`,
     },
