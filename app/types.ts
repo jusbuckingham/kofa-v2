@@ -6,6 +6,6 @@ export interface NewsStory {
   description?: string;
   source?: string;
   category?: string;
-  imageUrl?: string;  // <- this line
+  imageUrl?: string;
   publishedAt?: string;
 }

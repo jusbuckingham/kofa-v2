@@ -1,23 +1,17 @@
-// app/api/news/fetch/route.ts
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+import { MongoClient } from "mongodb";
+import type { NewsStory } from "@/types";
 
-import { NextResponse, NextRequest } from 'next/server';
-import { fetchAndStoreNews } from '@/lib/fetchNews';
+const uri = process.env.MONGODB_URI!;
+const client = new MongoClient(uri);
+const db = client.db("newsDB");
+const collection = db.collection("stories");
 
-export async function GET(req: NextRequest) {
-  // Expect header: Authorization: Bearer <CRON_SECRET>
-  const auth = req.headers.get('Authorization')?.split(' ')[1];
-  if (!auth || auth !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  try {
-    const { inserted } = await fetchAndStoreNews();
-    return NextResponse.json({ ok: true, inserted }, { status: 200 });
-  } catch (err) {
-    console.error('Fetch pipeline error:', err);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
+export async function insertStoriesIntoMongo(
+  stories: NewsStory[]
+): Promise<{ insertedCount: number; stories: NewsStory[] }> {
+  await client.connect();
+  const result = await collection.insertMany(stories);
+  const insertedIds = Object.values(result.insertedIds);
+  const insertedStories = await collection.find({ _id: { $in: insertedIds } }).toArray();
+  return { insertedCount: result.insertedCount, stories: insertedStories };
 }

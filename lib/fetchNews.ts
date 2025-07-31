@@ -23,13 +23,14 @@ export interface StoryDoc {
   imageUrl?: string;
 }
 
-export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
+export async function fetchNewsFromSource(): Promise<{ inserted: number; stories: StoryDoc[] }> {
   const client = await clientPromise;
   const dbName = process.env.MONGODB_DB_NAME ?? process.env.mongodb_db_name ?? "kofa";
   const db = client.db(dbName);
   const stories = db.collection<StoryDoc>("stories");
 
   let insertedCount = 0;
+  const storiesInserted: StoryDoc[] = [];
 
   for (const feedUrl of FEED_URLS) {
     try {
@@ -60,13 +61,14 @@ export async function fetchAndStoreNews(): Promise<{ inserted: number }> {
         };
         await stories.insertOne(doc);
         insertedCount++;
+        storiesInserted.push(doc);
       }
     } catch (err) {
       console.error(`Error processing feed ${feedUrl}:`, err);
     }
   }
 
-  return { inserted: insertedCount };
+  return { inserted: insertedCount, stories: storiesInserted };
 }
 
-export default fetchAndStoreNews;
+export default fetchNewsFromSource;
