@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Price ID is required' }, { status: 400 });
     }
 
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const origin = process.env.NEXT_PUBLIC_SITE_URL;
+    if (!origin) {
+      throw new Error("Missing NEXT_PUBLIC_SITE_URL environment variable");
+    }
+
     const checkoutSession = await stripe.checkout.sessions.create({
       cancel_url: `${origin}/pricing`,
       success_url: `${origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
