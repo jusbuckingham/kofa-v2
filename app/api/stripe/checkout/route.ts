@@ -3,13 +3,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2022-11-15' });
+import { stripe } from '@/lib/stripe';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
