@@ -6,26 +6,19 @@ const uri = process.env.MONGODB_URI!;
 const dbName = process.env.MONGODB_DB_NAME!;
 
 // Use a global to prevent exhausting connections in dev:
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+const client = new MongoClient(uri);
+const clientPromise =
+  process.env.NODE_ENV === "development"
+    ? global._mongoClientPromise || (global._mongoClientPromise = client.connect())
+    : client.connect();
 
 declare global {
+  // eslint-disable-next-line no-var
   var _mongoClientPromise: Promise<MongoClient>;
 }
 
 if (!uri) {
   throw new Error("MONGODB_URI is not set");
-}
-
-if (process.env.NODE_ENV === "development") {
-  if (!global._mongoClientPromise) {
-    client = new MongoClient(uri);
-    global._mongoClientPromise = client.connect();
-  }
-  clientPromise = global._mongoClientPromise;
-} else {
-  client = new MongoClient(uri);
-  clientPromise = client.connect();
 }
 
 export async function insertStoriesIntoMongo(
@@ -43,3 +36,5 @@ export async function insertStoriesIntoMongo(
     .toArray();
   return { insertedCount: insertResult.insertedCount, stories: insertedStories };
 }
+
+export { clientPromise };

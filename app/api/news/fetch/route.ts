@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   }
 
   // Pull in the latest stories
-  const stories = await fetchNewsFromSource();
+  const { stories } = await fetchNewsFromSource();
 
   // Connect to MongoDB
   const client = await clientPromise;

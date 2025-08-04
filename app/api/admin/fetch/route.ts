@@ -10,11 +10,11 @@ export async function GET(request: Request) {
   }
 
   // Fetch and store new stories
-  const { insertedCount, stories } = await fetchNewsFromSource();
+  const { inserted, stories } = await fetchNewsFromSource();
 
   return NextResponse.json({
     ok: true,
-    inserted: insertedCount,
+    inserted,
     stories,
   });
 }
