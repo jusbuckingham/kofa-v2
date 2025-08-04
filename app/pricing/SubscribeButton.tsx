@@ -24,7 +24,8 @@ export default function SubscribeButton({ priceId }: SubscribeButtonProps) {
   return (
     <button
       onClick={handleSubscribe}
-      className="mt-4 w-full py-2 bg-green-600 text-white rounded hover:bg-green-700"
+      aria-label="Subscribe to Pro Plan"
+      className="mt-6 w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-sm hover:bg-green-700 transition-colors duration-200"
     >
       Subscribe
     </button>

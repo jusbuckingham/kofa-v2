@@ -28,14 +28,6 @@ export default function SignInPage() {
       <div className="max-w-md w-full bg-white p-8 rounded shadow">
         <h1 className="text-2xl font-bold mb-6 text-center">Sign in</h1>
 
-        {providers?.demo && (
-          <button
-            onClick={() => signIn("demo", { callbackUrl: "/dashboard" })}
-            className="w-full mb-4 bg-gray-200 py-2 rounded hover:bg-gray-300"
-          >
-            Sign in with {providers.demo.name}
-          </button>
-        )}
 
         <form onSubmit={handleEmailSubmit}>
           <input name="csrfToken" type="hidden" defaultValue={csrfToken} />
