@@ -41,8 +41,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve price ID from environment (with legacy fallback)
-    const priceId =
+    let priceId =
       process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID;
+    // If a Product ID was provided, fetch its first active Price
+    if (priceId?.startsWith('prod_')) {
+      const priceList = await stripe.prices.list({
+        product: priceId,
+        active: true,
+        limit: 1,
+      });
+      if (priceList.data.length > 0) {
+        const fallbackPrice = priceList.data[0].id;
+        console.warn(`Resolved fallback price ID ${fallbackPrice} for product ${priceId}`);
+        priceId = fallbackPrice;
+      }
+    }
     if (!priceId) {
       console.error(
         'Missing both STRIPE_PRICE_ID and STRIPE_PRO_PRICE_ID',
