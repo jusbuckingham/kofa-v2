@@ -5,6 +5,7 @@ import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import clientPromise from "./mongodb";
 import type { Session, User } from "next-auth";
 import type { JWT } from "next-auth/jwt";
+import { stripe } from "@/lib/stripe";
 
 export const authOptions: NextAuthOptions = {
   adapter: MongoDBAdapter(clientPromise),
@@ -67,6 +68,25 @@ export const authOptions: NextAuthOptions = {
       su.stripeCustomerId = (token.stripeCustomerId as string | null) ?? null;
       session.user = su;
       return session;
+    },
+  },
+  events: {
+    async createUser({ user }) {
+      if (user.email) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { email: user.email },
+        });
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DB_NAME);
+        await db
+          .collection("user_metadata")
+          .updateOne(
+            { email: user.email },
+            { $set: { stripeCustomerId: customer.id, hasActiveSub: false } },
+            { upsert: true }
+          );
+      }
     },
   },
 };

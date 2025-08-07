@@ -8,17 +8,41 @@ import type { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { stripe } from '@/lib/stripe';
+import clientPromise from '@/lib/mongoClient';
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const { priceId } = await req.json();
+    // Connect to DB
+    const db = (await clientPromise).db(process.env.MONGODB_DB_NAME);
+    const users = db.collection('users');
+
+    // Retrieve or create Stripe customer for signed-in user
+    const userEmail = session.user.email;
+    const user = await users.findOne({ email: userEmail });
+    let stripeCustomerId = user?.stripeCustomerId;
+
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: userEmail,
+        metadata: { email: userEmail },
+      });
+      stripeCustomerId = customer.id;
+      await users.updateOne(
+        { email: userEmail },
+        { $set: { stripeCustomerId, hasActiveSub: false } },
+        { upsert: true }
+      );
+    }
+
+    // Use environment STRIPE_PRICE_ID instead of accepting from request
+    const priceId = process.env.STRIPE_PRICE_ID;
     if (!priceId) {
-      return NextResponse.json({ error: 'Price ID is required' }, { status: 400 });
+      throw new Error("Missing STRIPE_PRICE_ID environment variable");
     }
 
     const origin = process.env.NEXT_PUBLIC_SITE_URL;
@@ -27,12 +51,12 @@ export async function POST(req: NextRequest) {
     }
 
     const checkoutSession = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
       cancel_url: `${origin}/pricing`,
       success_url: `${origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
       payment_method_types: ['card'],
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
-      metadata: { email: session.user.email },
     });
 
     return NextResponse.json({ url: checkoutSession.url }, { status: 200 });
