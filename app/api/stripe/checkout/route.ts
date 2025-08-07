@@ -40,9 +40,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use environment STRIPE_PRICE_ID instead of accepting from request
-    const priceId = process.env.STRIPE_PRICE_ID;
+    // Resolve price ID from environment (with legacy fallback)
+    const priceId =
+      process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID;
     if (!priceId) {
+      console.error(
+        'Missing both STRIPE_PRICE_ID and STRIPE_PRO_PRICE_ID',
+        {
+          STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID,
+          STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID,
+        }
+      );
       throw new Error("Missing STRIPE_PRICE_ID environment variable");
     }
 
