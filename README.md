@@ -39,7 +39,7 @@ Kofa delivers AI-generated 3-point article summaries through the lens of Black s
 
    # Stripe
    STRIPE_SECRET_KEY=sk_test_...
-   STRIPE_PRO_PRICE_ID=price_...
+   STRIPE_PRICE_ID=price_...
    STRIPE_WEBHOOK_SECRET=whsec_...
 
    # Public
@@ -65,7 +65,7 @@ Kofa delivers AI-generated 3-point article summaries through the lens of Black s
 - **Metered Paywall**: 3 free reads per day for non-subscribers; unlimited for paying subscribers.
 - **Authentication**: Email magic link via NextAuth (with optional demo login in dev).
 - **Favorites Dashboard**: Save, view, and manage favorite stories at `/dashboard`.
-- **Billing**: Stripe Checkout integration and Webhooks to manage subscription state.
+- **Billing**: Stripe Checkout integration, subscription management via webhooks (checkout, subscription updated/canceled, invoice.payment_failed).
 - **Admin Tools**: Manual fetch and cleanup endpoints under `/api/admin`.
 - **Test Endpoint**: Call `/api/test-summarize` to validate the 3-point Black-conscious summarization prompt.
 
@@ -91,6 +91,7 @@ app/
   page.tsx              # Home page (infinite scroll + metered paywall)
   signin/page.tsx       # Sign-in (magic link + demo)
   dashboard/page.tsx    # Favorites dashboard
+  dashboard/manage-subscription/page.tsx   # Subscription management UI
   pricing/page.tsx      # Pricing page + Subscribe button
   api/                  # App Router API routes (NextAuth, news, favorites, stripe, admin)
 components/             # Reusable UI components (Header, StoryCard, banners, etc.)
