@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { stripe } from '@/lib/stripe';
-import clientPromise from '@/lib/mongoClient';
+import { clientPromise } from '@/lib/mongoClient';
 
 export const runtime = 'nodejs';
 

@@ -8,9 +8,10 @@ import type { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { stripe } from '@/lib/stripe';
-import clientPromise from '@/lib/mongoClient';
+import { clientPromise } from '@/lib/mongoClient';
 
-export async function POST(_req: NextRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
