@@ -10,8 +10,11 @@ export default function SubscribeButton() {
     setLoading(true);
     try {
       const res = await fetch('/api/stripe/checkout', { method: 'POST' });
-      if (!res.ok) throw new Error('Checkout failed');
-      const { url } = await res.json();
+      const data = await res.json();
+      const { url, error } = data;
+      if (!res.ok) {
+        throw new Error(error || 'Checkout failed');
+      }
       if (url) {
         window.location.assign(url);
       } else {
