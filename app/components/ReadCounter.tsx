@@ -15,15 +15,15 @@ export function ReadCounter({ className }: ReadCounterProps) {
     return null;
   }
 
-  // For subscribers, show unlimited reads
+  // For subscribers, show unlimited summaries
   if (hasActiveSub) {
-    return <div className={className}>Unlimited reads</div>;
+    return <div className={className}>Unlimited summaries</div>;
   }
 
   // For non-subscribers, show the remaining count
   return (
     <div className={className}>
-      {remaining} of {limit} reads left today
+      {remaining} of {limit} summaries left today
     </div>
   );
 }

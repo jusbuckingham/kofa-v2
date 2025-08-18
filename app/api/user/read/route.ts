@@ -4,9 +4,9 @@ export const revalidate = 0;
 export const runtime = "nodejs";
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { incrementRead, peekQuota } from "@/lib/quota";
+import { incrementSummaryView, peekSummaryQuota } from "@/lib/quota";
 
-const FREE_READS_PER_DAY = 3;
+const FREE_SUMMARIES_PER_DAY = 3;
 
 // GET = just check quota
 export async function GET(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const res = await peekQuota(token.email);
+  const res = await peekSummaryQuota(token.email);
   return NextResponse.json(res);
 }
 
@@ -42,14 +42,14 @@ export async function POST(req: NextRequest) {
   }
 
   const res = increment
-    ? await incrementRead(token.email)
-    : await peekQuota(token.email);
+    ? await incrementSummaryView(token.email)
+    : await peekSummaryQuota(token.email);
 
   if (!res.allowed) {
     return NextResponse.json(
       {
         error: "quota_exceeded",
-        message: `Free quota of ${FREE_READS_PER_DAY} reads per day reached.`,
+        message: `Free quota of ${FREE_SUMMARIES_PER_DAY} summaries per day reached.`,
         ...res,
       },
       { status: 402 }

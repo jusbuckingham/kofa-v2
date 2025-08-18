@@ -28,10 +28,30 @@ export default function SubscribeButton() {
     }
   };
 
-  if (!session) return <button disabled>Log in to subscribe</button>;
+  if (!session) {
+    return (
+      <button
+        disabled
+        className="px-6 py-3 rounded-lg bg-gray-300 text-gray-600 cursor-not-allowed font-medium"
+        aria-label="Log in to subscribe"
+      >
+        Log in to subscribe
+      </button>
+    );
+  }
+
   return (
-    <button onClick={handleSubscribe} disabled={!session || loading}>
-      {loading ? 'Loading…' : 'Subscribe $5/mo'}
+    <button
+      onClick={handleSubscribe}
+      disabled={!session || loading}
+      aria-label="Subscribe for $5 per month"
+      className={`px-6 py-3 rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+        loading
+          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+          : "bg-blue-600 text-white hover:bg-blue-700"
+      }`}
+    >
+      {loading ? "Loading…" : "Subscribe $5/mo"}
     </button>
   );
 }

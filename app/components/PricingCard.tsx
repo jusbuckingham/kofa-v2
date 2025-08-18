@@ -1,5 +1,3 @@
-
-
 // app/components/PricingCard.tsx
 "use client";
 
@@ -35,7 +33,8 @@ export default function PricingCard({ plan }: PricingCardProps) {
       <button
         onClick={plan.onClick}
         disabled={plan.disabled}
-        className={`mt-auto px-6 py-3 rounded-lg transition ${
+        aria-label={plan.buttonText}
+        className={`mt-auto px-6 py-3 rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-400 ${
           plan.disabled
             ? "bg-gray-300 text-gray-600 cursor-not-allowed"
             : "bg-blue-600 text-white hover:bg-blue-700"

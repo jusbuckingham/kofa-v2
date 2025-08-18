@@ -41,6 +41,21 @@ export default function ManageSubscriptionPage() {
     setCanceling(false);
   };
 
+  const handlePortal = async () => {
+    const res = await fetch('/api/stripe/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'portal' }),
+    });
+    if (res.ok) {
+      const { url } = await res.json();
+      if (url) window.location.href = url;
+    } else {
+      const { error } = await res.json().catch(() => ({}));
+      alert('Error: ' + (error || 'Unable to open portal'));
+    }
+  };
+
   if (!session) return <p>Please log in to manage your subscription.</p>;
   if (loading) return <p>Loading subscription...</p>;
   if (!sub) return <p>You don’t have an active subscription.</p>;
@@ -55,6 +70,9 @@ export default function ManageSubscriptionPage() {
       <p>Current period ends: {endDate}</p>
       <button onClick={handleCancel} disabled={canceling}>
         {canceling ? 'Canceling…' : 'Cancel Subscription'}
+      </button>
+      <button onClick={handlePortal} style={{ marginLeft: '1rem' }}>
+        Manage in Customer Portal
       </button>
     </div>
   );

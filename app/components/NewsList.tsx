@@ -1,24 +1,24 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import type { NewsStory } from "../types";
+import React, { useMemo, useState } from "react";
+import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
 interface NewsListProps {
-  initialStories?: NewsStory[];
+  initialSummaries?: Array<SummaryItem>;
   savedIds?: Array<string | number>;
 }
 
 export default function NewsList({
-  initialStories = [],
+  initialSummaries = [],
   savedIds = [],
 }: NewsListProps) {
-  const [stories, setStories] = useState<NewsStory[]>(initialStories);
+  const [summaries, setSummaries] = useState<Array<SummaryItem>>(initialSummaries);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [totalPages, setTotalPages] = useState<number | null>(null);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
 
   // Ensure we always have a Set to call .has on, even if an array was passed from the server
   const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
@@ -31,23 +31,22 @@ export default function NewsList({
     try {
       const res = await fetch(`/api/news?page=${page + 1}`);
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      // Expect shape: { data: NewsStory[], totalPages: number }
-      const json = await res.json() as { data: NewsStory[]; totalPages: number };
-      const data = Array.isArray(json.data) ? json.data : [];
+      // New API shape: { ok: boolean, stories: SummaryItem[], total: number, quota?: any }
+      const json = (await res.json()) as { ok: boolean; stories: Array<SummaryItem>; total: number };
+      const data = Array.isArray(json.stories) ? json.stories : [];
 
-      // On first fetch, grab totalPages
-      if (totalPages === null) {
-        setTotalPages(json.totalPages);
+      if (totalCount === null) {
+        setTotalCount(json.total);
       }
 
       if (data.length === 0) {
-        // No stories => end
         setHasMore(false);
       } else {
-        setStories(prev => [...prev, ...data]);
+        setSummaries((prev) => [...prev, ...data]);
         const nextPage = page + 1;
-        // If nextPage is last or beyond, stop
-        if (json.totalPages <= nextPage) {
+        const loaded = summaries.length + data.length;
+        const total = json.total ?? loaded;
+        if (loaded >= total) {
           setHasMore(false);
         }
         setPage(nextPage);
@@ -66,9 +65,9 @@ export default function NewsList({
   return (
     <>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {stories.map((story, idx) => (
-          <div key={story.id ?? idx} className="fade-in">
-            <StoryCard story={story} isSaved={savedSet.has(story.id)} />
+        {summaries.map((summary, idx) => (
+          <div key={(summary as any).id ?? idx} className="fade-in">
+            <StoryCard story={summary} isSaved={savedSet.has((summary as any).id)} />
           </div>
         ))}
       </div>
@@ -100,18 +99,13 @@ export default function NewsList({
             <span>{loading ? "Loading..." : "Load more"}</span>
           </button>
         ) : (
-          <p className="text-gray-500">No more stories</p>
+          <p className="text-gray-500">No more summaries</p>
         )}
       </div>
 
       <style jsx>{`
-        .fade-in {
-          animation: fadein 0.5s ease-in-out;
-        }
-        @keyframes fadein {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
+        .fade-in { animation: fadein 0.5s ease-in-out; }
+        @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
     </>
   );

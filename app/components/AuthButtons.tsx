@@ -19,9 +19,9 @@ export default function AuthButtons() {
         <button
           onClick={() => signOut()}
           aria-label="Sign out"
-          className="text-sm text-red-200 hover:underline"
+          className="text-sm text-red-500 hover:underline"
         >
-          Sign Out
+          Sign out
         </button>
       </div>
     );
@@ -33,7 +33,7 @@ export default function AuthButtons() {
       aria-label="Sign in"
       className="text-sm text-blue-500 hover:underline"
     >
-      Sign In
+      Sign in
     </button>
   );
 }

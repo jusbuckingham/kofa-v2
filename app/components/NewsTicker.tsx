@@ -1,14 +1,14 @@
 "use client";
 import React, { useState } from "react";
-import type { NewsStory } from "../types";
+import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
 interface NewsTickerProps {
-  initialStories?: NewsStory[];
+  initialSummaries?: SummaryItem[];
 }
 
-export default function NewsTicker({ initialStories = [] }: NewsTickerProps) {
-  const [stories, setStories] = useState<NewsStory[]>(initialStories);
+export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
+  const [summaries, setSummaries] = useState<SummaryItem[]>(initialSummaries);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +20,14 @@ export default function NewsTicker({ initialStories = [] }: NewsTickerProps) {
     try {
       const res = await fetch(`/api/news?page=${page + 1}`);
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data: NewsStory[] = await res.json();
+      // New API shape: { ok, stories: SummaryItem[], total }
+      const json = (await res.json()) as { ok: boolean; stories: SummaryItem[]; total: number };
+      const data = Array.isArray(json.stories) ? json.stories : [];
       if (data.length === 0) {
         setHasMore(false);
         return;
       }
-      setStories(prev => [...prev, ...data]);
+      setSummaries(prev => [...prev, ...data]);
       setPage(prev => prev + 1);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -37,8 +39,8 @@ export default function NewsTicker({ initialStories = [] }: NewsTickerProps) {
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {stories.map((s, i) => {
-          const key = s.id != null ? s.id : `story-${i}`;
+        {summaries.map((s, i) => {
+          const key = (s as any).id != null ? (s as any).id : `summary-${i}`;
           return <StoryCard key={key} story={s} />;
         })}
       </div>
@@ -54,7 +56,7 @@ export default function NewsTicker({ initialStories = [] }: NewsTickerProps) {
           </button>
         )}
         {!hasMore && (
-          <p className="mt-6 text-center text-gray-500">No more stories</p>
+          <p className="mt-6 text-center text-gray-500">No more summaries</p>
         )}
       </div>
     </>

@@ -67,9 +67,9 @@ export default function PaywallModal({
 
         <div className="px-5 pb-5 pt-3 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300 space-y-4">
           <p>
-            You’ve reached your free daily story limit ({totalFreeReads}). To
-            keep reading culturally conscious, Black-centered summaries crafted
-            for clarity and context, become a supporter.
+            You’ve reached your free daily summaries limit ({totalFreeReads}). To
+            keep accessing culturally conscious, Black-centered news in our 5‑point
+            format, become a supporter.
           </p>
 
           <div className="space-y-2">
@@ -88,7 +88,7 @@ export default function PaywallModal({
           </div>
 
           <ul className="space-y-2 text-sm">
-            <FeatureItem>Unlimited daily story summaries</FeatureItem>
+            <FeatureItem>Unlimited daily news summaries (Who, What, Where, When, Why)</FeatureItem>
             <FeatureItem>Ad‑free, distraction‑free reading</FeatureItem>
             <FeatureItem>Priority feature access &amp; feedback channel</FeatureItem>
             <FeatureItem>Directly supports independent curation</FeatureItem>

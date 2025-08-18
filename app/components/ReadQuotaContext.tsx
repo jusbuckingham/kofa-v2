@@ -9,7 +9,7 @@ import {
   ReactNode,
 } from "react";
 
-// Quota context value: remaining reads, total limit, subscription flag, and a refresh method
+// Quota context value: remaining summaries, total limit, subscription flag, and a refresh method
 export type QuotaContextValue = {
   remaining: number | null;
   limit: number | null;
@@ -29,7 +29,7 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
     try {
       const res = await fetch("/api/user/read");
       if (res.status === 401) {
-        // User not authenticated; set default free reads
+        // User not authenticated; set default free summaries
         setRemaining(null);
         setLimit(null);
         setHasActiveSub(false);

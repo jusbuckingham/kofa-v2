@@ -34,7 +34,7 @@ export default function Header() {
       </div>
       <nav className="flex items-center space-x-6">
         <Link href="/dashboard" className="text-white hover:underline">
-          Dashboard
+          My Summaries
         </Link>
         <Link href="/pricing" className="text-white hover:underline">
           Pricing
@@ -54,9 +54,9 @@ export default function Header() {
             <button
               onClick={() => signOut()}
               aria-label="Sign out"
-              className="text-sm text-red-200 hover:underline"
+              className="text-sm text-red-500 hover:underline"
             >
-              Sign Out
+              Sign out
             </button>
           </div>
         )}

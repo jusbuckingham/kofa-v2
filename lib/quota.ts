@@ -1,23 +1,36 @@
 import clientPromise from "@/lib/mongodb";
 
-// Number of free reads per day for non-subscribers
-export const FREE_READS_PER_DAY = Number(process.env.FREE_READS_PER_DAY ?? 20);
+// Number of free summaries per day for non-subscribers
+// Prefer FREE_SUMMARIES_PER_DAY; fall back to old FREE_READS_PER_DAY for compatibility
+export const FREE_SUMMARIES_PER_DAY = Number(
+  process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY ?? 3
+);
 
 export interface QuotaResult {
-  readsToday: number;
-  totalReads: number;
+  // New canonical fields
+  summariesToday: number;
+  totalSummaries: number;
   limit: number | null; // null when unlimited (subscriber)
   allowed: boolean;
   hasActiveSub: boolean;
+  // Back-compat mirrors (deprecated): retained so existing callers don’t break
+  /** @deprecated use summariesToday */
+  readsToday?: number;
+  /** @deprecated use totalSummaries */
+  totalReads?: number;
 }
 
 interface UserMetaDoc {
   email: string;
-  readsToday: number;
-  totalReads: number;
+  // New fields
+  summariesViewedToday?: number;
+  summariesTotal?: number;
   lastResetUTC: number; // ms at UTC midnight
   hasActiveSub?: boolean;
   stripeCustomerId?: string | null;
+  // Legacy fields for migration support
+  readsToday?: number;
+  totalReads?: number;
 }
 
 function startOfUTCday(d: Date = new Date()): number {
@@ -26,7 +39,7 @@ function startOfUTCday(d: Date = new Date()): number {
   return copy.getTime();
 }
 
-async function upsertAndCheckQuota(email: string, increment: boolean): Promise<QuotaResult> {
+async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Promise<QuotaResult> {
   const client = await clientPromise;
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserMetaDoc>("user_metadata");
@@ -35,97 +48,120 @@ async function upsertAndCheckQuota(email: string, increment: boolean): Promise<Q
 
   const doc = await coll.findOne({ email });
 
-  // Create new doc if doesn't exist
+  // If no document exists, create a fresh one
   if (!doc) {
-    const readsToday = increment ? 1 : 0;
-    const totalReads = increment ? 1 : 0;
+    const summariesToday = increment ? 1 : 0;
+    const totalSummaries = increment ? 1 : 0;
     const hasActiveSub = false;
 
     await coll.insertOne({
       email,
-      readsToday,
-      totalReads,
+      summariesViewedToday: summariesToday,
+      summariesTotal: totalSummaries,
       lastResetUTC: todayKey,
       hasActiveSub,
     });
 
     return {
-      readsToday,
-      totalReads,
-      limit: FREE_READS_PER_DAY,
-      allowed: readsToday <= FREE_READS_PER_DAY,
+      summariesToday,
+      totalSummaries,
+      limit: FREE_SUMMARIES_PER_DAY,
+      allowed: summariesToday <= FREE_SUMMARIES_PER_DAY,
       hasActiveSub,
+      // back-compat mirrors
+      readsToday: summariesToday,
+      totalReads: totalSummaries,
     };
   }
 
-  // Reset if new UTC day
+  // Handle UTC day rollover
   const reset = doc.lastResetUTC !== todayKey;
-  let readsToday = reset ? 0 : doc.readsToday ?? 0;
-  let totalReads = doc.totalReads ?? 0;
+
+  // Migrate legacy fields if present
+  let summariesToday = reset ? 0 : (doc.summariesViewedToday ?? doc.readsToday ?? 0);
+  let totalSummaries = doc.summariesTotal ?? doc.totalReads ?? 0;
   const hasActiveSub = Boolean(doc.hasActiveSub);
 
-  // Subscribers: unlimited but still track counts
+  // Subscribers: unlimited, but still track counters
   if (hasActiveSub) {
     if (increment) {
       await coll.updateOne(
         { email },
         {
           $set: { lastResetUTC: todayKey },
-          $inc: { readsToday: 1, totalReads: 1 },
+          $inc: { summariesViewedToday: 1, summariesTotal: 1 },
         }
       );
-      readsToday += 1;
-      totalReads += 1;
+      summariesToday += 1;
+      totalSummaries += 1;
     } else if (reset) {
       await coll.updateOne(
         { email },
-        { $set: { lastResetUTC: todayKey, readsToday, totalReads } }
+        { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
       );
     }
 
     return {
-      readsToday,
-      totalReads,
+      summariesToday,
+      totalSummaries,
       limit: null,
       allowed: true,
       hasActiveSub,
+      // back-compat
+      readsToday: summariesToday,
+      totalReads: totalSummaries,
     };
   }
 
   // Non-subscriber flow
-  const projectedReads = increment ? readsToday + 1 : readsToday;
-  const allowed = projectedReads <= FREE_READS_PER_DAY;
+  const projected = increment ? summariesToday + 1 : summariesToday;
+  const allowed = projected <= FREE_SUMMARIES_PER_DAY;
 
   if (increment && allowed) {
     await coll.updateOne(
       { email },
       {
         $set: { lastResetUTC: todayKey },
-        $inc: { readsToday: 1, totalReads: 1 },
+        $inc: { summariesViewedToday: 1, summariesTotal: 1 },
       }
     );
-    readsToday = projectedReads;
-    totalReads += 1;
+    summariesToday = projected;
+    totalSummaries += 1;
   } else if (reset) {
     await coll.updateOne(
       { email },
-      { $set: { lastResetUTC: todayKey, readsToday, totalReads } }
+      { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
     );
   }
 
   return {
-    readsToday,
-    totalReads,
-    limit: FREE_READS_PER_DAY,
+    summariesToday,
+    totalSummaries,
+    limit: FREE_SUMMARIES_PER_DAY,
     allowed,
     hasActiveSub,
+    // back-compat mirrors
+    readsToday: summariesToday,
+    totalReads: totalSummaries,
   };
 }
 
-export async function incrementRead(email: string) {
-  return upsertAndCheckQuota(email, true);
+// New canonical APIs
+export async function incrementSummaryView(email: string) {
+  return upsertAndCheckSummaryQuota(email, true);
 }
 
+export async function peekSummaryQuota(email: string) {
+  return upsertAndCheckSummaryQuota(email, false);
+}
+
+// Backwards-compatible aliases (deprecated)
+/** @deprecated use incrementSummaryView */
+export async function incrementRead(email: string) {
+  return incrementSummaryView(email);
+}
+
+/** @deprecated use peekSummaryQuota */
 export async function peekQuota(email: string) {
-  return upsertAndCheckQuota(email, false);
+  return peekSummaryQuota(email);
 }

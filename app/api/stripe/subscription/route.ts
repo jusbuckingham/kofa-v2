@@ -39,3 +39,47 @@ export async function GET() {
       : null,
   });
 }
+
+export async function POST(req: Request) {
+  const contentType = req.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+  const body = isJson ? (await req.json().catch(() => ({}))) : ({} as any);
+  const action = typeof body?.action === "string" ? body.action : undefined;
+
+  if (action !== "portal") {
+    return NextResponse.json({ error: "unsupported_action" }, { status: 400 });
+  }
+
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const db = (await clientPromise).db(process.env.MONGODB_DB_NAME);
+    const users = db.collection("users");
+    const user = await users.findOne({ email: session.user.email });
+
+    const customerId = (session.user as any).stripeCustomerId || user?.stripeCustomerId;
+    if (!customerId) {
+      return NextResponse.json({ error: "no_customer" }, { status: 400 });
+    }
+
+    const returnUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXTAUTH_URL ||
+      "http://localhost:3000/dashboard";
+
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl,
+    });
+
+    return NextResponse.json({ url: portal.url });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "portal_error", message: err?.message || "failed" },
+      { status: 500 }
+    );
+  }
+}

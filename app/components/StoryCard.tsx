@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { NewsStory } from "../types";
+import type { NewsStory, SummaryItem } from "../types";
 import formatDate from "../utils/formatDate";
 
 interface StoryImageProps {
@@ -25,7 +25,7 @@ function StoryImage({ src, alt }: StoryImageProps) {
 }
 
 interface StoryCardProps {
-  story: NewsStory;
+  story: NewsStory | SummaryItem;
   isSaved?: boolean;
   onSaved?: (storyId: string) => void;
   onPaywall?: (context?: { storyId: string | number }) => void;
@@ -120,6 +120,8 @@ export default function StoryCard({
     return () => window.removeEventListener("metadataUpdated", onMeta);
   }, []);
 
+  useEffect(() => { setOverLimit(isLocked); }, [isLocked]);
+
   async function handleToggle() {
     if (saving) return;
     setSaving(true);
@@ -164,10 +166,29 @@ export default function StoryCard({
     return typeof value === "string" ? value : undefined;
   }
 
+  function enforceLen(s?: string, max = 120): string {
+    if (!s) return "";
+    return s.length > max ? s.slice(0, max - 1).trim() + "…" : s;
+  }
+
   const summary = pickString(story, "summary") ?? "";
   const source = pickString(story, "source");
   const category = pickString(story, "category");
   const dateStr = pickString(story, "publishedAt") ?? "";
+
+  const oneLiner = "oneLiner" in story ? enforceLen((story as SummaryItem).oneLiner) : summary;
+  const bullets = "bullets" in story && (story as SummaryItem).bullets
+    ? [
+        { label: "Who",   val: enforceLen((story as SummaryItem).bullets.who) },
+        { label: "What",  val: enforceLen((story as SummaryItem).bullets.what) },
+        { label: "Where", val: enforceLen((story as SummaryItem).bullets.where) },
+        { label: "When",  val: enforceLen((story as SummaryItem).bullets.when) },
+        { label: "Why",   val: enforceLen((story as SummaryItem).bullets.why)  },
+      ]
+    : [];
+  const colorNote = "colorNote" in story ? (story as SummaryItem).colorNote ?? "" : "";
+  const sources = "sources" in story ? (story as SummaryItem).sources ?? [] : [];
+  const isLocked = Boolean((story as any).locked);
 
   return (
     <article
@@ -203,22 +224,42 @@ export default function StoryCard({
         <StoryImage src={story.imageUrl!} alt={story.title} />
       )}
 
-      {summary && (
-        <ul className="list-none space-y-2 mb-4">
-          {summary
-            .split(/\r?\n/)
-            .map((pt) => pt.replace(/^[-*]\s*/, "").trim())
-            .filter(Boolean)
-            .slice(0, 3)
-            .map((point, idx) => (
-              <li key={idx} className="flex items-start">
-                <span className="mr-2 mt-1 text-blue-600">•</span>
-                <p className="text-sm leading-relaxed break-words flex-1">
-                  {point}
-                </p>
-              </li>
-            ))}
+      {oneLiner && (
+        <p className="text-sm mb-3 text-gray-700 dark:text-gray-300">{oneLiner}</p>
+      )}
+
+      {bullets.length > 0 && (
+        <ul className={`list-none space-y-1.5 mb-3 ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
+          {bullets.map((b, idx) => (
+            <li key={idx} className="text-sm flex gap-2">
+              <span className="shrink-0 font-semibold">{b.label}:</span>
+              <span className="truncate" title={b.val}>{b.val}</span>
+            </li>
+          ))}
         </ul>
+      )}
+
+      {colorNote && (
+        <p className={`text-xs italic border-l-2 pl-2 ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
+          {colorNote}
+        </p>
+      )}
+
+      {sources?.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-500">
+          {sources.map((s, i) => (
+            <a
+              key={i}
+              href={s.url}
+              target="_blank"
+              rel="noreferrer"
+              className="underline opacity-70 hover:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {s.domain?.replace(/^www\./, "") || "source"}
+            </a>
+          ))}
+        </div>
       )}
 
       {story.url && (
@@ -238,10 +279,10 @@ export default function StoryCard({
       <div className="flex items-center gap-3">
         {story.url && (
           <button
-            onClick={overLimit ? () => onPaywall?.({ storyId: story.id }) : handleRead}
-            disabled={reading || overLimit}
+            onClick={isLocked ? () => onPaywall?.({ storyId: story.id }) : handleRead}
+            disabled={reading || isLocked}
             className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
-              overLimit
+              isLocked
                 ? "bg-gray-400 text-white cursor-not-allowed"
                 : reading
                 ? "bg-blue-300 text-white"
@@ -261,8 +302,8 @@ export default function StoryCard({
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
               </svg>
             )}
-            {overLimit ? "Upgrade to continue" : "Read"}
-            {readsLeft !== null && !overLimit && (
+            {isLocked ? "Upgrade to continue" : "Read"}
+            {readsLeft !== null && !isLocked && (
               <span className="ml-2 text-[10px] opacity-80">
                 {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
               </span>
@@ -318,6 +359,18 @@ export default function StoryCard({
 
       {saved && (
         <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500" />
+      )}
+
+      {isLocked && (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/5 pointer-events-none rounded-lg" />
+          <div className="absolute inset-x-0 bottom-0 p-3">
+            <div className="rounded-md bg-white/90 dark:bg-zinc-900/80 backdrop-blur border text-center py-2">
+              <span className="mr-2 text-sm">Upgrade to unlock all summaries</span>
+              <Link href="/pricing" className="inline-block rounded border px-3 py-1 text-sm">Go Pro</Link>
+            </div>
+          </div>
+        </>
       )}
     </article>
   );
