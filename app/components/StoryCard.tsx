@@ -6,6 +6,10 @@ import Image from "next/image";
 import type { NewsStory, SummaryItem } from "../types";
 import formatDate from "../utils/formatDate";
 
+function isSummaryItem(x: NewsStory | SummaryItem): x is SummaryItem {
+  return (x as SummaryItem).oneLiner !== undefined;
+}
+
 interface StoryImageProps {
   src: string;
   alt: string;
@@ -44,12 +48,14 @@ export default function StoryCard({
   }, [isSaved]);
 
   const [reading, setReading] = useState(false);
-  const [readsLeft, setReadsLeft] = useState<number | null>(null);
+  const [summariesLeft, setSummariesLeft] = useState<number | null>(null);
   const [saveError, setSaveError] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [overLimit, setOverLimit] = useState(false);
   const MAX_FALLBACK_FREE = 3;
   const titleId = useId();
+
+  const isLocked = isSummaryItem(story) ? Boolean(story.locked) : false;
 
   async function hitQuotaEndpoint(options: { increment: boolean; storyId?: string | number }) {
     const { increment, storyId } = options;
@@ -60,22 +66,17 @@ export default function StoryCard({
       cache: "no-store",
     });
 
-    if (res.status === 402) {
-      const data = await res.json().catch(() => ({}));
-      return { ...data, allowed: false } as {
-        readsToday: number;
-        limit: number;
-        allowed: boolean;
-        hasActiveSub?: boolean;
-      };
+    // Both 200 and 402 bodies are JSON; map to a uniform shape
+    const json = await res.json().catch(() => ({}));
+    const limit: number | null = typeof json.limit === "number" ? json.limit : null;
+    const today: number = (json.summariesToday ?? json.readsToday ?? 0) as number;
+    const allowed: boolean = res.ok ? Boolean(json.allowed ?? true) : false;
+    const hasActiveSub: boolean | undefined = json.hasActiveSub;
+
+    if (!res.ok) {
+      return { today, limit: limit ?? MAX_FALLBACK_FREE, allowed: false, hasActiveSub } as const;
     }
-    if (!res.ok) throw new Error(`Quota check failed (${res.status})`);
-    return (await res.json()) as {
-      readsToday: number;
-      limit: number;
-      allowed: boolean;
-      hasActiveSub?: boolean;
-    };
+    return { today, limit: limit ?? MAX_FALLBACK_FREE, allowed, hasActiveSub } as const;
   }
 
   async function handleRead() {
@@ -86,13 +87,13 @@ export default function StoryCard({
     try {
       const quota = await hitQuotaEndpoint({ increment: true, storyId: story.id });
       const limit = quota.limit ?? MAX_FALLBACK_FREE;
-      const left = Math.max(limit - quota.readsToday, 0);
-      setReadsLeft(left);
+      const left = Math.max(limit - quota.today, 0);
+      setSummariesLeft(left);
       setOverLimit(!quota.allowed || left === 0);
 
       window.dispatchEvent(
         new CustomEvent("metadataUpdated", {
-          detail: { dailyCount: quota.readsToday, maxFree: limit },
+          detail: { dailyCount: quota.today, maxFree: limit },
         })
       );
 
@@ -113,7 +114,7 @@ export default function StoryCard({
     function onMeta(e: Event) {
       const detail = (e as CustomEvent<{ dailyCount: number; maxFree?: number }>).detail;
       const left = Math.max((detail.maxFree ?? MAX_FALLBACK_FREE) - detail.dailyCount, 0);
-      setReadsLeft(left);
+      setSummariesLeft(left);
       setOverLimit(left === 0);
     }
     window.addEventListener("metadataUpdated", onMeta);
@@ -161,8 +162,8 @@ export default function StoryCard({
     }
   }
 
-  function pickString<T>(obj: T, key: keyof T): string | undefined {
-    const value = obj[key];
+  function pickStringLoose(obj: unknown, key: string): string | undefined {
+    const value = (obj as Record<string, unknown>)[key];
     return typeof value === "string" ? value : undefined;
   }
 
@@ -171,24 +172,23 @@ export default function StoryCard({
     return s.length > max ? s.slice(0, max - 1).trim() + "…" : s;
   }
 
-  const summary = pickString(story, "summary") ?? "";
-  const source = pickString(story, "source");
-  const category = pickString(story, "category");
-  const dateStr = pickString(story, "publishedAt") ?? "";
+  const summary = pickStringLoose(story, "summary") ?? "";
+  const source = pickStringLoose(story, "source");
+  const category = pickStringLoose(story, "category");
+  const dateStr = pickStringLoose(story, "publishedAt") ?? "";
 
-  const oneLiner = "oneLiner" in story ? enforceLen((story as SummaryItem).oneLiner) : summary;
-  const bullets = "bullets" in story && (story as SummaryItem).bullets
+  const oneLiner = isSummaryItem(story) ? enforceLen(story.oneLiner) : summary;
+  const bullets = isSummaryItem(story) && story.bullets
     ? [
-        { label: "Who",   val: enforceLen((story as SummaryItem).bullets.who) },
-        { label: "What",  val: enforceLen((story as SummaryItem).bullets.what) },
-        { label: "Where", val: enforceLen((story as SummaryItem).bullets.where) },
-        { label: "When",  val: enforceLen((story as SummaryItem).bullets.when) },
-        { label: "Why",   val: enforceLen((story as SummaryItem).bullets.why)  },
+        { label: "Who",   val: enforceLen(story.bullets.who) },
+        { label: "What",  val: enforceLen(story.bullets.what) },
+        { label: "Where", val: enforceLen(story.bullets.where) },
+        { label: "When",  val: enforceLen(story.bullets.when) },
+        { label: "Why",   val: enforceLen(story.bullets.why)  },
       ]
     : [];
-  const colorNote = "colorNote" in story ? (story as SummaryItem).colorNote ?? "" : "";
-  const sources = "sources" in story ? (story as SummaryItem).sources ?? [] : [];
-  const isLocked = Boolean((story as any).locked);
+  const colorNote = isSummaryItem(story) ? story.colorNote ?? "" : "";
+  const sources = isSummaryItem(story) ? story.sources ?? [] : [];
 
   return (
     <article
@@ -303,9 +303,9 @@ export default function StoryCard({
               </svg>
             )}
             {isLocked ? "Upgrade to continue" : "Read"}
-            {readsLeft !== null && !isLocked && (
+            {summariesLeft !== null && !isLocked && (
               <span className="ml-2 text-[10px] opacity-80">
-                {readsLeft} free read{readsLeft === 1 ? "" : "s"} left
+                {summariesLeft} free summary{summariesLeft === 1 ? "" : "ies"} left
               </span>
             )}
           </button>

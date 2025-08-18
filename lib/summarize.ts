@@ -1,6 +1,12 @@
 // lib/summarize.ts
 import OpenAI from "openai";
-import { FiveWs } from "@/app/types";
+import { FiveWs } from "@/types";
+
+interface SummarizeResponse {
+  oneLiner?: string;
+  bullets?: Partial<FiveWs>;
+  colorNote?: string;
+}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -10,7 +16,7 @@ export default async function summarizeWithPerspective(
   text: string
 ): Promise<{ oneLiner: string; bullets: FiveWs; colorNote: string }> {
   // Structured Five Ws + Black perspective, JSON output
-  const messages: { role: string; content: string }[] = [
+  const messages: Array<{ role: "system" | "user"; content: string }> = [
     {
       role: "system",
       content: `Extract structured news summary.
@@ -36,46 +42,45 @@ ${text}`,
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: messages as any[],
+      messages,
       temperature: 0.3,
     });
     const raw = response.choices[0].message.content ?? "";
-    let parsed: any;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      // fallback: wrap in minimal object
       parsed = {
         oneLiner: raw.slice(0, 120),
         bullets: { who: "", what: "", where: "", when: "", why: "" },
         colorNote: "",
-      };
+      } satisfies SummarizeResponse;
     }
+    const safe: SummarizeResponse =
+      typeof parsed === "object" && parsed !== null ? (parsed as SummarizeResponse) : {};
     const bullets: FiveWs = {
-      who: enforce(parsed.bullets?.who),
-      what: enforce(parsed.bullets?.what),
-      where: enforce(parsed.bullets?.where),
-      when: enforce(parsed.bullets?.when),
-      why: enforce(parsed.bullets?.why),
+      who: enforce(safe.bullets?.who),
+      what: enforce(safe.bullets?.what),
+      where: enforce(safe.bullets?.where),
+      when: enforce(safe.bullets?.when),
+      why: enforce(safe.bullets?.why),
     };
     return {
-      oneLiner: enforce(parsed.oneLiner),
+      oneLiner: enforce(safe.oneLiner),
       bullets,
-      colorNote: parsed.colorNote ?? "",
+      colorNote: safe.colorNote ?? "",
     };
   } catch (error: unknown) {
     // Check for insufficient_quota on error.cause
-    const err = error as { cause?: { code?: unknown } };
-    if (err.cause?.code === "insufficient_quota") {
+    const code = (error as { cause?: { code?: unknown } } | undefined)?.cause?.code;
+    if (code === "insufficient_quota") {
       const fallback = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        messages: messages as any[],
+        messages,
         temperature: 0.3,
       });
       const raw = fallback.choices[0].message.content ?? "";
-      let parsed: any;
+      let parsed: unknown;
       try {
         parsed = JSON.parse(raw);
       } catch {
@@ -83,19 +88,21 @@ ${text}`,
           oneLiner: raw.slice(0, 120),
           bullets: { who: "", what: "", where: "", when: "", why: "" },
           colorNote: "",
-        };
+        } satisfies SummarizeResponse;
       }
+      const safe: SummarizeResponse =
+        typeof parsed === "object" && parsed !== null ? (parsed as SummarizeResponse) : {};
       const bullets: FiveWs = {
-        who: enforce(parsed.bullets?.who),
-        what: enforce(parsed.bullets?.what),
-        where: enforce(parsed.bullets?.where),
-        when: enforce(parsed.bullets?.when),
-        why: enforce(parsed.bullets?.why),
+        who: enforce(safe.bullets?.who),
+        what: enforce(safe.bullets?.what),
+        where: enforce(safe.bullets?.where),
+        when: enforce(safe.bullets?.when),
+        why: enforce(safe.bullets?.why),
       };
       return {
-        oneLiner: enforce(parsed.oneLiner),
+        oneLiner: enforce(safe.oneLiner),
         bullets,
-        colorNote: parsed.colorNote ?? "",
+        colorNote: safe.colorNote ?? "",
       };
     }
     throw error;

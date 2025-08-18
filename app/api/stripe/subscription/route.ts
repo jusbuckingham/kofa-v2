@@ -41,9 +41,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  type Body = { action?: string };
   const contentType = req.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
-  const body = isJson ? (await req.json().catch(() => ({}))) : ({} as any);
+  const emptyBody: Body = {};
+  const body: Body = isJson ? (await req.json().catch(() => emptyBody)) : emptyBody;
   const action = typeof body?.action === "string" ? body.action : undefined;
 
   if (action !== "portal") {
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
     const users = db.collection("users");
     const user = await users.findOne({ email: session.user.email });
 
-    const customerId = (session.user as any).stripeCustomerId || user?.stripeCustomerId;
+    const customerId = (session.user as { stripeCustomerId?: string } | undefined)?.stripeCustomerId || user?.stripeCustomerId;
     if (!customerId) {
       return NextResponse.json({ error: "no_customer" }, { status: 400 });
     }
@@ -76,9 +78,10 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ url: portal.url });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "failed";
     return NextResponse.json(
-      { error: "portal_error", message: err?.message || "failed" },
+      { error: "portal_error", message },
       { status: 500 }
     );
   }

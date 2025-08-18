@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     quotaInfo = await peekSummaryQuota(email);
   }
 
-  const stories = docs.map((doc, idx) => {
+  const stories = docs.map((doc) => {
     const locked =
       quotaInfo && !quotaInfo.hasActiveSub &&
       quotaInfo.summariesToday >= (quotaInfo.limit ?? 0);

@@ -40,7 +40,7 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {summaries.map((s, i) => {
-          const key = (s as any).id != null ? (s as any).id : `summary-${i}`;
+          const key = s.id ?? `summary-${i}`;
           return <StoryCard key={key} story={s} />;
         })}
       </div>

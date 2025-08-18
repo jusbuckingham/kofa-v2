@@ -66,8 +66,8 @@ export default function NewsList({
     <>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {summaries.map((summary, idx) => (
-          <div key={(summary as any).id ?? idx} className="fade-in">
-            <StoryCard story={summary} isSaved={savedSet.has((summary as any).id)} />
+          <div key={summary.id ?? idx} className="fade-in">
+            <StoryCard story={summary} isSaved={savedSet.has(summary.id)} />
           </div>
         ))}
       </div>
