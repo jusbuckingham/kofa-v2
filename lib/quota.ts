@@ -2,9 +2,10 @@ import clientPromise from "@/lib/mongodb";
 
 // Number of free summaries per day for non-subscribers
 // Prefer FREE_SUMMARIES_PER_DAY; fall back to old FREE_READS_PER_DAY for compatibility
-export const FREE_SUMMARIES_PER_DAY = Number(
-  process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY ?? 3
-);
+export const FREE_SUMMARIES_PER_DAY =
+  Number.isFinite(Number(process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY))
+    ? Number(process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY)
+    : 3;
 
 export interface QuotaResult {
   // New canonical fields

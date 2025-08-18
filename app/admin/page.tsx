@@ -12,10 +12,11 @@ export default function AdminPage() {
   useEffect(() => {
     const fetchLast = async () => {
       try {
-        const res = await fetch('/api/news/get?limit=1&sort=newest');
+        const res = await fetch('/api/news?limit=1&sort=newest', { cache: 'no-store' });
         const json = await res.json();
-        if (Array.isArray(json.news) && json.news.length > 0) {
-          setLastRun(new Date(json.news[0].date).toLocaleString());
+        if (Array.isArray(json.stories) && json.stories.length > 0) {
+          const ts = json.stories[0].publishedAt || json.stories[0].createdAt;
+          setLastRun(ts ? new Date(ts).toLocaleString() : new Date().toLocaleString());
         }
       } catch (err) {
         console.error('Failed to fetch last run:', err);
@@ -29,9 +30,9 @@ export default function AdminPage() {
   const handleFetch = async () => {
     setStatus('Running fetch...');
     try {
-      const res = await fetch('/api/fetch-news');
+      const res = await fetch('/api/news/fetch', { method: 'GET', cache: 'no-store' });
       const json = await res.json();
-      setStatus(json.message || json.error || 'Done');
+      setStatus(json.message || json.error || `Inserted ${json.inserted ?? 0} item(s)`);
       // Update last run
       setLastRun(new Date().toLocaleString());
     } catch (err) {
@@ -52,9 +53,10 @@ export default function AdminPage() {
         </div>
         <button
           onClick={handleFetch}
-          className="mb-4 px-4 py-2 bg-blue-600 text-white rounded"
+          disabled={status === 'Running fetch...'}
+          className={`mb-4 px-4 py-2 rounded text-white ${status === 'Running fetch...' ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
-          Run Fetch-News
+          {status === 'Running fetch...' ? 'Fetching…' : 'Run Fetch-News'}
         </button>
         {status && (
           <div className="mt-2">

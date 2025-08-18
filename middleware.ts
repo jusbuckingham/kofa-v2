@@ -6,7 +6,7 @@ import { getToken } from "next-auth/jwt";
  * Paths that should NEVER trigger auth checks (public pages & APIs)
  */
 const PUBLIC_PAGE_PATHS = ["/", "/signin", "/pricing"];
-const PUBLIC_API_PREFIXES = ["/api/news", "/api/auth", "/api/stripe/webhooks"];
+const PUBLIC_API_PREFIXES = ["/api/news", "/api/auth", "/api/stripe/webhooks", "/api/user/read"];
 
 /**
  * Paths that MUST be authenticated
@@ -14,8 +14,9 @@ const PUBLIC_API_PREFIXES = ["/api/news", "/api/auth", "/api/stripe/webhooks"];
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/api/favorites",
-  "/api/user",
+  "/api/user", // note: /api/user/read is allowed via PUBLIC_API_PREFIXES
   "/api/stripe/checkout",
+  "/api/stripe/subscription",
 ];
 
 export async function middleware(req: NextRequest) {
@@ -79,5 +80,6 @@ export const config = {
     "/api/favorites/:path*",
     "/api/user/:path*",
     "/api/stripe/checkout/:path*",
+    "/api/stripe/subscription/:path*",
   ],
 };

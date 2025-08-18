@@ -5,7 +5,10 @@
 export type SubscriptionStatus = "active" | "trialing" | "canceled" | "none";
 
 // Number of free story summary reads per (UTC) day for non‑subscribed users.
-export const FREE_DAILY_STORY_LIMIT = Number(process.env.FREE_DAILY_LIMIT ?? 3);
+export const FREE_DAILY_STORY_LIMIT =
+  Number.isFinite(Number(process.env.FREE_DAILY_LIMIT))
+    ? Number(process.env.FREE_DAILY_LIMIT)
+    : 3;
 
 // Statuses that should be treated as “paid / unlimited”.
 export const SUBSCRIPTION_ACTIVE_STATUSES: readonly SubscriptionStatus[] = ["active", "trialing"] as const;

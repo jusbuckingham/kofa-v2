@@ -8,9 +8,11 @@ interface SummarizeResponse {
   colorNote?: string;
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) {
+  throw new Error("Missing OPENAI_API_KEY env var");
+}
+const openai = new OpenAI({ apiKey });
 
 export default async function summarizeWithPerspective(
   text: string
@@ -39,25 +41,42 @@ ${text}`,
     return str.length > max ? str.slice(0, max - 1).trim() + "…" : str;
   }
 
+  function parseJsonLoose(raw: string): SummarizeResponse {
+    // Strip common markdown code fences
+    const fenced = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+    try {
+      return JSON.parse(fenced) as SummarizeResponse;
+    } catch {
+      // Attempt to extract the first {...} block
+      const start = fenced.indexOf("{");
+      const end = fenced.lastIndexOf("}");
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = fenced.slice(start, end + 1);
+        try {
+          return JSON.parse(candidate) as SummarizeResponse;
+        } catch {
+          // fall through
+        }
+      }
+      return {
+        oneLiner: fenced.slice(0, 120),
+        bullets: { who: "", what: "", where: "", when: "", why: "" },
+        colorNote: "",
+      };
+    }
+  }
+
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
       temperature: 0.3,
+      response_format: { type: "json_object" },
+      max_tokens: 300,
     });
     const raw = response.choices[0].message.content ?? "";
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = {
-        oneLiner: raw.slice(0, 120),
-        bullets: { who: "", what: "", where: "", when: "", why: "" },
-        colorNote: "",
-      } satisfies SummarizeResponse;
-    }
-    const safe: SummarizeResponse =
-      typeof parsed === "object" && parsed !== null ? (parsed as SummarizeResponse) : {};
+    const parsed = parseJsonLoose(raw);
+    const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
     const bullets: FiveWs = {
       who: enforce(safe.bullets?.who),
       what: enforce(safe.bullets?.what),
@@ -78,20 +97,12 @@ ${text}`,
         model: "gpt-3.5-turbo",
         messages,
         temperature: 0.3,
+        response_format: { type: "json_object" },
+        max_tokens: 300,
       });
       const raw = fallback.choices[0].message.content ?? "";
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = {
-          oneLiner: raw.slice(0, 120),
-          bullets: { who: "", what: "", where: "", when: "", why: "" },
-          colorNote: "",
-        } satisfies SummarizeResponse;
-      }
-      const safe: SummarizeResponse =
-        typeof parsed === "object" && parsed !== null ? (parsed as SummarizeResponse) : {};
+      const parsed = parseJsonLoose(raw);
+      const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
       const bullets: FiveWs = {
         who: enforce(safe.bullets?.who),
         what: enforce(safe.bullets?.what),

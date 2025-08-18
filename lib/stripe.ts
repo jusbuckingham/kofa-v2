@@ -4,18 +4,19 @@ if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error("Missing STRIPE_SECRET_KEY in environment variables.");
 }
 
-declare global {
-  var stripeInstance: Stripe | undefined;
-}
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY as string;
+
+// Use a narrowed view of globalThis for caching in dev without polluting types
+const globalForStripe = globalThis as unknown as { stripeInstance?: Stripe };
 
 const stripe =
-  global.stripeInstance ||
-  new Stripe(process.env.STRIPE_SECRET_KEY, {
+  globalForStripe.stripeInstance ||
+  new Stripe(stripeSecretKey, {
     apiVersion: "2022-11-15",
   });
 
 if (process.env.NODE_ENV === "development") {
-  global.stripeInstance = stripe;
+  globalForStripe.stripeInstance = stripe;
 }
 
 export { stripe };

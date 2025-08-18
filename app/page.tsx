@@ -6,13 +6,13 @@ import { useQuota } from "@/components/ReadQuotaContext";
 import ReadQuotaBanner from "@/components/ReadQuotaBanner";
 import SkeletonCard from "@/components/SkeletonCard";
 import StoryCard from "@/components/StoryCard";
-import type { NewsStory } from "@/types";
+import type { SummaryItem } from "@/types";
 
 const LIMIT = 5;
 
 export default function HomePage() {
   const { hasActiveSub } = useQuota();
-  const [stories, setStories] = useState<NewsStory[]>([]);
+  const [stories, setStories] = useState<SummaryItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,7 @@ export default function HomePage() {
       try {
         const res = await fetch(`/api/news/get?limit=${LIMIT}&offset=${offset}`);
         if (res.ok) {
-          const data = (await res.json()) as { stories: NewsStory[]; total: number };
+          const data = (await res.json()) as { ok?: boolean; stories: SummaryItem[]; total: number; quota?: unknown };
           if (active) {
             setStories(prev => [...prev, ...data.stories]);
             setTotal(data.total);
@@ -61,7 +61,7 @@ export default function HomePage() {
       try {
         const res = await fetch('/api/favorites');
         if (res.ok) {
-          const favs = (await res.json()) as NewsStory[];
+          const favs = (await res.json()) as SummaryItem[];
           setSavedSet(new Set(favs.map(s => s.id)));
         }
       } catch {}
@@ -94,7 +94,7 @@ export default function HomePage() {
   return (
     <main className="max-w-3xl mx-auto p-4">
       {!hasActiveSub && <ReadQuotaBanner />}
-      <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Stories</h2>
+      <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Summaries</h2>
       <ul className="space-y-6">
         {stories.map(story => (
           <li key={story.id}>

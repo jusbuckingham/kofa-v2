@@ -10,8 +10,8 @@ import { ObjectId } from "mongodb";
 
 import { authOptions } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
-import type { NewsStory } from "../types";
-import StoryCard from '../components/StoryCard';
+import type { NewsStory } from "@/types";
+import StoryCard from "../components/StoryCard";
 
 export default async function DashboardPage() {
   // ===== Session Check =====
@@ -54,8 +54,8 @@ export default async function DashboardPage() {
 
       {stories.length === 0 ? (
         <p className="text-center text-gray-500">
-          You have no saved stories.{' '}
-          <Link href="/">Browse stories</Link> to add some.
+          You have no saved summaries{" "}
+          <Link href="/">Browse summaries</Link> to add some.
         </p>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
