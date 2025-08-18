@@ -46,7 +46,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
         // Summarize content snippet or summary field
         const textToSummarize =
           item.contentSnippet || item.content || item.summary || item.title || "";
-        const summary = await summarizeWithPerspective(textToSummarize);
+        const summaryResult = await summarizeWithPerspective(textToSummarize);
+        const summary = typeof summaryResult === "string" ? summaryResult : summaryResult.oneLiner;
 
         // attempt to pull an enclosure/image URL from the feed item
         const imageUrl = item.enclosure?.url;
