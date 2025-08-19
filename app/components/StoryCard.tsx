@@ -112,10 +112,13 @@ export default function StoryCard({
   return (
     <article
       aria-labelledby={titleId}
-      className="relative w-full max-w-md p-6 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm bg-white/75 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md hover:-translate-y-0.5 focus-within:ring-2 ring-blue-500/70 fade-in"
+      className="relative w-full max-w-md p-5 border border-gray-200/70 dark:border-zinc-800/70 rounded-2xl shadow-sm bg-white/80 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md hover:-translate-y-0.5 hover:bg-white/90 focus-within:ring-2 ring-blue-500/70 fade-in"
       role="group"
     >
-      <h2 id={titleId} className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100">
+      <h2
+        id={titleId}
+        className="text-xl md:text-2xl font-semibold tracking-tight leading-tight mb-2 text-gray-900 dark:text-gray-100"
+      >
         {story.title}
       </h2>
 
@@ -125,11 +128,22 @@ export default function StoryCard({
 
       {isSummaryItem(story) && (
         <>
-          <ul className={`list-disc list-inside marker:text-gray-400 dark:marker:text-gray-500 space-y-2 mb-3 text-[0.95rem] leading-relaxed ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
-            {bullets.map((text, idx) => (
-              <li key={idx} className="truncate" title={text}>{text}</li>
-            ))}
-          </ul>
+          <div className="mb-3 rounded-md border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/40 px-3 py-2">
+            <span className="sr-only">Summary</span>
+            <ul
+              className={`${
+                isLocked ? "blur-sm select-none pointer-events-none" : ""
+              } list-none space-y-2 text-[0.97rem] leading-relaxed`}
+            >
+              {bullets.map((text, idx) => (
+                <li key={idx} className="flex items-start gap-3 whitespace-normal break-words tracking-tight" title={text}>
+                  <span className="mt-[0.55rem] inline-block w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0" aria-hidden="true" />
+                  <span className="text-gray-800 dark:text-gray-200">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="mb-2" />
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"

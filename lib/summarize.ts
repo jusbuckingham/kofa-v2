@@ -24,17 +24,20 @@ export default async function summarizeWithPerspective(
 Style:
 - Speak as Kofa, a trusted guide for Black readers, delivering clear, conversational "need to know" insights.
 - Frame context explicitly from a Black perspective: history, systemic patterns, equity, community impact, and accountability.
+- Write as Kofa’s own briefing. Do NOT reference an article, outlet, or author. No “according to,” “the article,” or “reports say.”
 - Talk directly and personally to the reader with warmth and clarity.
 - Avoid stereotypes or tokenizing; uplift authentic community voices and lived experience.
 - Maintain a grounded, respectful tone—no slang, hashtags, or emojis.
 Formatting:
 - \`bullets\` MUST be an array with EXACTLY 4 strings—each should stand alone and read like a takeaway.
 - Bullets may include multiple short sentences (tweet-like); keep the total per bullet ≤ 120 characters.
+- Each line must stand alone as the source for the reader; never point to another source.
 - No labels like "Who:"—just the content of each point.
 - Each bullet MUST be ≤ 120 characters (aim for ~90–120).
 Notes:
 - If the Black community context is not genuinely relevant, keep the bullet neutral and factual.
-- Prioritize clarity, dignity, and usefulness to Black readers.`,
+- Prioritize clarity, dignity, and usefulness to Black readers.
+- Avoid source attributions, outlet names, and quotation marks unless truly essential identifiers (e.g., a person/place). Rewrite attributions as plain facts.`,
     },
     {
       role: "user",
@@ -44,11 +47,23 @@ ${text}`,
     },
   ];
 
+  // Remove external attributions so bullets read as Kofa's own briefing
+  function deAttribute(str: string): string {
+    const s = str
+      // strip leading quotes
+      .replace(/^["'“”]+/, "")
+      // common attribution starters
+      .replace(/^(?:according to|reports? (?:say|from)|news outlets?|media reports?|sources? say|the (?:article|story|report))\b[:,]?\s*/i, "")
+      // collapse multiple spaces
+      .replace(/\s+/g, " ");
+    return s.trim();
+  }
+
   // Helper to enforce length limits (tweet-friendly, word-safe, normalizes whitespace)
   function enforce(str?: string, max = 120): string {
     if (!str) return "";
     // normalize whitespace
-    const clean = str.replace(/\s+/g, " ").trim();
+    const clean = deAttribute(str).replace(/\s+/g, " ").trim();
     if (clean.length <= max) return clean;
 
     const slice = clean.slice(0, max - 1);
@@ -68,7 +83,7 @@ ${text}`,
       ? Object.values(input as Record<string, unknown>)
       : [];
     const onlyStrings = arr.filter((v): v is string => typeof v === "string");
-    const trimmed = onlyStrings.map((s) => enforce(s, max)).filter((s) => s.length > 0);
+    const trimmed = onlyStrings.map((s) => enforce(deAttribute(s), max)).filter((s) => s.length > 0);
     // Ensure exactly 4 entries: slice if too long, pad with empty strings if too short
     const four = trimmed.slice(0, 4);
     while (four.length < 4) four.push("");
@@ -107,7 +122,7 @@ ${text}`,
     const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
     const bullets = normalizeBullets(safe.bullets);
     return {
-      oneLiner: enforce(safe.oneLiner),
+      oneLiner: enforce(safe.oneLiner ? deAttribute(safe.oneLiner) : undefined),
       bullets,
     };
   } catch (error: unknown) {
@@ -126,7 +141,7 @@ ${text}`,
       const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
       const bullets = normalizeBullets(safe.bullets);
       return {
-        oneLiner: enforce(safe.oneLiner),
+        oneLiner: enforce(safe.oneLiner ? deAttribute(safe.oneLiner) : undefined),
         bullets,
       };
     }
