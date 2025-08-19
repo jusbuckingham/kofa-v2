@@ -3,6 +3,9 @@ import React, { useEffect, useState } from "react";
 import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
+interface NewsResponse { ok: boolean; stories: SummaryItem[]; total: number }
+interface QuotaResponse { remaining: number | null; limit: number | null; hasActiveSub: boolean }
+
 interface NewsTickerProps {
   initialSummaries?: SummaryItem[];
 }
@@ -16,6 +19,17 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
   const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
   const [freeLimit, setFreeLimit] = useState<number>(3);
 
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  const handleSavedToggle = (id: string) => {
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const loadMore = async () => {
     setLoading(true);
     setError(null);
@@ -23,7 +37,7 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
       const res = await fetch(`/api/news?page=${page + 1}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       // New API shape: { ok, stories: SummaryItem[], total }
-      const json = (await res.json()) as { ok: boolean; stories: SummaryItem[]; total: number };
+      const json: NewsResponse = await res.json();
       const data = Array.isArray(json.stories) ? json.stories : [];
       if (data.length === 0) {
         setHasMore(false);
@@ -42,16 +56,25 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/user/read', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setHasActiveSub(Boolean(data?.hasActiveSub));
-          if (typeof data?.limit === 'number') setFreeLimit(data.limit);
+        // Fetch quota (free limit & subscription)
+        const q = await fetch('/api/user/read', { cache: 'no-store' });
+        if (q.ok) {
+          const data: QuotaResponse = await q.json();
+          if (!cancelled) {
+            setHasActiveSub(Boolean(data?.hasActiveSub));
+            if (typeof data?.limit === 'number') setFreeLimit(data.limit);
+          }
         }
-      } catch {
-        // ignore; defaults apply
-      }
+      } catch { /* ignore */ }
+
+      try {
+        // Fetch saved favorites to pre-mark cards
+        const f = await fetch('/api/favorites', { cache: 'no-store' });
+        if (f.ok) {
+          const favs = (await f.json()) as { id: string }[];
+          if (!cancelled) setSavedIds(new Set(favs.map(x => x.id).filter(Boolean)));
+        }
+      } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -63,7 +86,14 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
           const key = s.id ?? `summary-${i}`;
           const shouldLock = !hasActiveSub && i >= freeLimit;
           const storyWithLock = ({ ...s, locked: shouldLock });
-          return <StoryCard key={key} story={storyWithLock} />;
+          return (
+            <StoryCard
+              key={key}
+              story={storyWithLock}
+              isSaved={savedIds.has(s.id)}
+              onSaved={handleSavedToggle}
+            />
+          );
         })}
       </div>
       {error && <p className="text-red-500">{error}</p>}

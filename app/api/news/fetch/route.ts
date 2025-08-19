@@ -106,21 +106,16 @@ export async function GET(request: Request) {
       // Prefer feed image, only fetch HTML if missing
       const imageUrl = s.imageUrl || s.image || (await extractOgImage(url)) || undefined;
 
-      // Summarize into 5Ws + lens + one-liner
+      // Summarize into one-liner + 4 bullets (no labels)
       let oneLiner = "";
-      let bullets = { who: "", what: "", where: "", when: "", why: "" };
-      let colorNote = "";
+      let bullets: string[] = ["", "", "", ""];
       try {
         const ai = await summarizeWithPerspective(body);
         oneLiner = ai.oneLiner;
-        bullets = {
-          who: ai.bullets?.who ?? "",
-          what: ai.bullets?.what ?? "",
-          where: ai.bullets?.where ?? "",
-          when: ai.bullets?.when ?? "",
-          why: ai.bullets?.why ?? "",
-        };
-        colorNote = ai.colorNote ?? "";
+        const raw = Array.isArray(ai.bullets) ? ai.bullets : [];
+        const four = raw.slice(0, 4);
+        while (four.length < 4) four.push("");
+        bullets = four;
       } catch {
         // leave minimal fields if summarization fails
         oneLiner = title;
@@ -145,7 +140,6 @@ export async function GET(request: Request) {
               imageUrl,
               oneLiner,
               bullets,
-              colorNote,
               sources,
             },
           },

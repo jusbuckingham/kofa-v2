@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
@@ -23,8 +23,42 @@ export default function NewsList({
   const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
   const [freeLimit, setFreeLimit] = useState<number>(3);
 
-  // Ensure we always have a Set to call .has on, even if an array was passed from the server
-  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
+  // Local saved state, synchronized from server-provided savedIds
+  const [savedSet, setSavedSet] = useState<Set<string | number>>(new Set(savedIds));
+  useEffect(() => {
+    setSavedSet(new Set(savedIds));
+  }, [savedIds]);
+
+  // If no savedIds were provided, fetch favorites to pre-mark saved stories
+  useEffect(() => {
+    let cancelled = false;
+    if (savedIds.length > 0) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/favorites', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as { id: string }[];
+        if (cancelled) return;
+        setSavedSet(prev => {
+          const next = new Set(prev);
+          for (const d of data) if (d?.id) next.add(d.id);
+          return next;
+        });
+      } catch {
+        // silently ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [savedIds.length]);
+
+  const handleSavedToggle = (id: string) => {
+    setSavedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
@@ -93,7 +127,11 @@ export default function NewsList({
             : summary;
           return (
             <div key={summary.id ?? idx} className="fade-in">
-              <StoryCard story={storyWithLock} isSaved={savedSet.has(summary.id)} />
+              <StoryCard
+                story={storyWithLock}
+                isSaved={savedSet.has(summary.id)}
+                onSaved={handleSavedToggle}
+              />
             </div>
           );
         })}

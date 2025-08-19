@@ -1,10 +1,20 @@
 "use client";
 
-import React, { useState, useEffect, useId } from "react";
+import React, { useId, useState } from "react";
+import { FiBookmark, FiShare2, FiExternalLink } from "react-icons/fi";
 import Link from "next/link";
 import Image from "next/image";
 import type { NewsStory, SummaryItem } from "../types";
-import formatDate from "../utils/formatDate";
+
+const hostFromUrl = (u?: string) => {
+  if (!u) return "";
+  try {
+    const h = new URL(u).hostname;
+    return h.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+};
 
 function isSummaryItem(x: NewsStory | SummaryItem): x is SummaryItem {
   return (x as SummaryItem).oneLiner !== undefined;
@@ -19,12 +29,12 @@ function StoryImage({ src, alt }: StoryImageProps) {
   const isValid = /^https?:\/\//i.test(src) || src.startsWith("data:");
   if (!isValid) return null;
   return (
-    <div className="mb-4 relative w-full h-48">
+    <div className="mb-4 relative w-full h-52 rounded-lg overflow-hidden">
       <Image
         src={src}
         alt={alt}
         fill
-        className="object-cover rounded-t-lg"
+        className="object-cover"
         unoptimized
       />
     </div>
@@ -39,49 +49,26 @@ interface StoryCardProps {
 
 export default function StoryCard({
   story,
-  isSaved = false,
+  isSaved,
   onSaved,
 }: StoryCardProps) {
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(isSaved);
-  useEffect(() => {
-    setSaved(isSaved);
-  }, [isSaved]);
-
-  const [saveError, setSaveError] = useState(false);
   const titleId = useId();
 
   const isLocked = isSummaryItem(story) ? Boolean(story.locked) : false;
-
-  function pickStringLoose(obj: unknown, key: string): string | undefined {
-    const value = (obj as Record<string, unknown>)[key];
-    return typeof value === "string" ? value : undefined;
-  }
 
   function enforceLen(s?: string, max = 120): string {
     if (!s) return "";
     return s.length > max ? s.slice(0, max - 1).trim() + "…" : s;
   }
 
-  const summary = pickStringLoose(story, "summary") ?? "";
-  const source = pickStringLoose(story, "source");
-  const category = pickStringLoose(story, "category");
-  const dateStr = pickStringLoose(story, "publishedAt") ?? "";
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<boolean>(Boolean(isSaved));
 
-  const oneLiner = isSummaryItem(story) ? enforceLen(story.oneLiner) : summary;
-  const bullets = isSummaryItem(story)
-    ? (['who', 'what', 'when', 'where', 'why'] as const).map((k) =>
-        enforceLen((story.bullets as Record<string, string | undefined> | undefined)?.[k])
-      )
-    : [];
-  const colorNote = isSummaryItem(story) ? story.colorNote ?? "" : "";
-  const sources = isSummaryItem(story) ? story.sources ?? [] : [];
-
-  async function handleToggle() {
-    if (saving) return;
+  const handleToggleSave = async () => {
+    if (!("id" in story) || !story.id) return;
     setSaving(true);
-    setSaveError(false);
-
+    setSaveError(null);
     try {
       const method = saved ? "DELETE" : "POST";
       const res = await fetch("/api/favorites", {
@@ -89,165 +76,105 @@ export default function StoryCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storyId: story.id }),
       });
-      if (!res.ok) throw new Error("Favorite toggle failed");
+      if (!res.ok) throw new Error(`Failed to ${saved ? "remove" : "save"}`);
       setSaved(!saved);
       onSaved?.(story.id);
-      window.dispatchEvent(
-        new CustomEvent(saved ? "favoriteRemoved" : "favoriteAdded", {
-          detail: { id: story.id },
-        })
-      );
-    } catch {
-      setSaveError(true);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  async function handleShare() {
+  const handleShare = async () => {
     try {
-      if (navigator.share) await navigator.share({ title: story.title, url: story.url! });
-      else {
-        await navigator.clipboard.writeText(story.url ?? "");
-        alert("Link copied to clipboard");
+      if ("url" in story && story.url) {
+        if (navigator.share) {
+          await navigator.share({ title: story.title, url: story.url });
+        } else {
+          await navigator.clipboard.writeText(story.url);
+        }
       }
     } catch {
-      // no-op
+      // best-effort
     }
-  }
+  };
+
+  const bullets = isSummaryItem(story)
+    ? (() => {
+        const arr = Array.isArray(story.bullets) ? story.bullets : [];
+        const four = arr.slice(0, 4);
+        while (four.length < 4) four.push("");
+        return four.map((b) => enforceLen(b));
+      })()
+    : [];
 
   return (
     <article
       aria-labelledby={titleId}
-      className="relative w-full max-w-md p-5 border rounded-lg shadow-sm bg-white/70 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md focus-within:ring-2 ring-blue-500 fade-in"
+      className="relative w-full max-w-md p-6 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm bg-white/75 dark:bg-zinc-900/60 backdrop-blur transition hover:shadow-md hover:-translate-y-0.5 focus-within:ring-2 ring-blue-500/70 fade-in"
       role="group"
     >
-      {(source || category) && (
-        <div className="mb-2 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-400">
-          {source && <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-zinc-800">{source}</span>}
-          {category && (
-            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/40">{category}</span>
-          )}
-        </div>
-      )}
-
-      <h2
-        id={titleId}
-        className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100"
-      >
+      <h2 id={titleId} className="text-lg font-semibold mb-2 leading-snug text-gray-900 dark:text-gray-100">
         {story.title}
       </h2>
-      {dateStr && (
-        <time
-          dateTime={dateStr}
-          className="text-xs text-gray-500 dark:text-gray-400 mb-2 block"
-        >
-          {formatDate(dateStr)}
-        </time>
-      )}
 
       {story.imageUrl && (
         <StoryImage src={story.imageUrl!} alt={story.title} />
       )}
 
-      {oneLiner && (
-        <p className="text-sm mb-3 text-gray-700 dark:text-gray-300">{oneLiner}</p>
-      )}
-
       {isSummaryItem(story) && (
-        <ul className={`list-disc list-inside space-y-1.5 mb-3 text-sm ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
-          {bullets.map((text, idx) => (
-            <li key={idx} className="truncate" title={text}>{text}</li>
-          ))}
-        </ul>
-      )}
-
-      {colorNote && (
-        <p className={`text-xs italic border-l-2 pl-2 ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
-          {colorNote}
-        </p>
-      )}
-
-      {sources?.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-500">
-          {sources.map((s, i) => (
-            <a
-              key={i}
-              href={s.url}
-              target="_blank"
-              rel="noreferrer"
-              className="underline opacity-70 hover:opacity-100"
-              onClick={(e) => e.stopPropagation()}
+        <>
+          <ul className={`list-disc list-inside marker:text-gray-400 dark:marker:text-gray-500 space-y-2 mb-3 text-[0.95rem] leading-relaxed ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
+            {bullets.map((text, idx) => (
+              <li key={idx} className="truncate" title={text}>{text}</li>
+            ))}
+          </ul>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleToggleSave}
+              disabled={saving}
+              title={saved ? "Unsave" : "Save for later"}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-green-500/40 disabled:opacity-50 disabled:cursor-not-allowed ${
+                saved ? "bg-green-500 text-white hover:bg-green-600" : "bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-zinc-800 dark:text-gray-100 dark:hover:bg-zinc-700"
+              }`}
+              aria-label={saved ? "Unsave this story" : "Save this story"}
             >
-              {s.domain?.replace(/^www\./, "") || "source"}
-            </a>
-          ))}
-        </div>
-      )}
+              <FiBookmark className={`w-4 h-4 ${saved ? "animate-pulse" : ""}`} />
+              {saved ? "Saved" : "Save"}
+            </button>
 
-      {story.url && (
-        <div className="mb-4 text-xs">
-          <Link
+            <button
+              type="button"
+              onClick={handleShare}
+              title="Share link"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition shadow-sm hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500/40"
+              aria-label="Share this story"
+            >
+              <FiShare2 className="w-4 h-4" />
+              Share
+            </button>
+
+            {saveError && (
+              <span className="text-xs text-red-600" role="alert">{saveError}</span>
+            )}
+          </div>
+        </>
+      )}
+      {"url" in story && story.url && (
+        <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+          Source:{" "}
+          <a
             href={story.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline dark:text-blue-400"
-            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 underline hover:no-underline"
           >
-            Original article →
-          </Link>
-        </div>
-      )}
-
-      <div className="flex items-center gap-3">
-
-        <button
-          onClick={handleToggle}
-          disabled={saving}
-          aria-pressed={saved}
-          className={`inline-flex items-center px-3 py-1.5 rounded text-sm font-medium transition ${
-            saved
-              ? "bg-gray-400 text-white"
-              : saving
-              ? "bg-green-400 text-white"
-              : "bg-green-600 hover:bg-green-700 text-white"
-          }`}
-        >
-          {saving && (
-            <svg
-              className="animate-spin h-4 w-4 mr-2"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              role="status"
-              aria-label="Saving"
-            >
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-            </svg>
-          )}
-          {saved ? "❤️ Saved" : saving ? "Saving…" : "🤍 Save"}
-        </button>
-
-        <button
-          onClick={handleShare}
-          className="inline-flex items-center px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-zinc-800"
-          aria-label="Share story"
-        >
-          🔗
-        </button>
-      </div>
-
-      <div className="mt-3 min-h-[1rem] text-xs">
-        {saveError && !saved && (
-          <button onClick={handleToggle} className="text-red-600 underline">
-            Retry save
-          </button>
-        )}
-      </div>
-
-      {saved && (
-        <div className="absolute top-2 right-2 h-3 w-3 rounded-full bg-green-500" />
+            {hostFromUrl(story.url) || "Original"}
+            <FiExternalLink className="w-3 h-3 opacity-80" />
+          </a>
+        </p>
       )}
 
       {isLocked && (

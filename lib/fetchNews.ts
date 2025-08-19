@@ -59,6 +59,12 @@ function extractImageFromItem(item: Parser.Item): string | undefined {
   return undefined;
 }
 
+function enforceLen(input: unknown, max = 120): string {
+  if (!input || typeof input !== "string") return "";
+  const s = input.trim();
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}
+
 // Comma-separated list of RSS URLs in your .env.local
 const FEED_URLS = (process.env.FEED_URLS ?? "")
   .split(",")
@@ -70,7 +76,10 @@ const parser = new Parser();
 export interface StoryDoc {
   title: string;
   url: string;
-  summary: string;
+  summary: {
+    oneLiner: string;
+    bullets: string[]; // exactly 4 strings, each \u2264 120 chars
+  };
   publishedAt: Date;
   createdAt: Date;
   imageUrl?: string;
@@ -112,13 +121,21 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
           const textToSummarize =
             (item.contentSnippet as string) || (item.content as string) || (item.summary as string) || item.title || "";
           const summaryResult = await summarizeWithPerspective(textToSummarize);
-          const summary = typeof summaryResult === "string" ? summaryResult : summaryResult.oneLiner;
+          const summary = {
+            oneLiner: enforceLen(summaryResult.oneLiner),
+            bullets: (() => {
+              const arr = Array.isArray(summaryResult.bullets) ? summaryResult.bullets : [];
+              const four = arr.slice(0, 4).map((b) => enforceLen(b));
+              while (four.length < 4) four.push("");
+              return four;
+            })(),
+          };
 
           // Image extraction (enclosure or first <img> in content)
           const imageUrl = extractImageFromItem(item);
 
           const doc: StoryDoc = {
-            title: item.title || "Untitled",
+            title: typeof item.title === "string" && item.title.trim() ? item.title : "Untitled",
             url,
             summary,
             publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),

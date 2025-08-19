@@ -32,7 +32,7 @@ export interface SummaryItem {
   publishedAt: string;
   imageUrl?: string;
   oneLiner: string;
-  bullets: FiveWs;
+  bullets: string[];
   colorNote: string;
   sources: SourceRef[];
   locked?: boolean; // for free vs. pro gating

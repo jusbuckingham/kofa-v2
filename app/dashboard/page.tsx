@@ -20,14 +20,7 @@ type StoryDoc = {
   url?: string;
   summary?: {
     oneLiner?: string;
-    bullets?: {
-      who?: string;
-      what?: string;
-      when?: string;
-      where?: string;
-      why?: string;
-    };
-    colorNote?: string;
+    bullets?: string[];
   };
   imageUrl?: string;
   publishedAt?: Date | string;
@@ -50,7 +43,7 @@ export default async function DashboardPage() {
   // ===== Fetch User's Favorite Story IDs =====
   const favDocs = await db
     .collection<{ email: string; storyId: string }>('favorites')
-    .find({ email: session.user.email })
+    .find({ email: session.user.email.trim().toLowerCase() })
     .toArray();
 
   // ===== Fetch Story Documents for Favorites =====
@@ -76,14 +69,13 @@ export default async function DashboardPage() {
       title: doc.title ?? "Untitled",
       url,
       oneLiner: doc.summary?.oneLiner ?? "",
-      bullets: {
-        who: doc.summary?.bullets?.who ?? "",
-        what: doc.summary?.bullets?.what ?? "",
-        when: doc.summary?.bullets?.when ?? "",
-        where: doc.summary?.bullets?.where ?? "",
-        why: doc.summary?.bullets?.why ?? "",
-      },
-      colorNote: doc.summary?.colorNote ?? "",
+      bullets: (() => {
+        const raw = Array.isArray(doc.summary?.bullets) ? doc.summary?.bullets : [];
+        const four = raw.slice(0, 4);
+        while (four.length < 4) four.push("");
+        return four;
+      })(),
+      colorNote: "",
       imageUrl: doc.imageUrl ?? undefined,
       publishedAt: publishedAt ?? "",
       source: doc.source ?? (url ? new URL(url).hostname.replace(/^www\./, "") : ""),
@@ -116,7 +108,7 @@ export default async function DashboardPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {stories.map(story => (
             <div key={story.id} className="relative">
-              <StoryCard story={story} />
+              <StoryCard story={story} isSaved={true} />
               <button
                 onClick={async () => {
                   await fetch('/api/favorites', {
