@@ -29,7 +29,7 @@ export default function Header() {
           Kofa
         </Link>
         <p className="text-sm text-white/80 mt-1">
-          Black culturally conscious summaries of the latest news.
+          News summaries through the lens of Black consciousness.
         </p>
       </div>
       <nav className="flex items-center space-x-6">

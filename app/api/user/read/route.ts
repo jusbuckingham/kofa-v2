@@ -11,12 +11,22 @@ const FREE_SUMMARIES_PER_DAY = 3;
 // GET = just check quota
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+
+  // If the user is not signed in, return a safe default so the UI can render limits client-side.
   if (!token?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({
+      hasActiveSub: false,
+      summariesToday: 0,
+      limit: FREE_SUMMARIES_PER_DAY,
+      allowed: true,
+    });
   }
 
   const res = await peekSummaryQuota(token.email);
-  return NextResponse.json(res);
+  return NextResponse.json({
+    ...res,
+    limit: FREE_SUMMARIES_PER_DAY,
+  });
 }
 
 // POST = increment (call when a story is actually opened)
@@ -48,13 +58,17 @@ export async function POST(req: NextRequest) {
   if (!res.allowed) {
     return NextResponse.json(
       {
+        ...res,
         error: "quota_exceeded",
         message: `Free quota of ${FREE_SUMMARIES_PER_DAY} summaries per day reached.`,
-        ...res,
+        limit: FREE_SUMMARIES_PER_DAY,
       },
       { status: 402 }
     );
   }
 
-  return NextResponse.json(res);
+  return NextResponse.json({
+    ...res,
+    limit: FREE_SUMMARIES_PER_DAY,
+  });
 }

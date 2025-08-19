@@ -16,6 +16,8 @@ interface StoryImageProps {
 }
 
 function StoryImage({ src, alt }: StoryImageProps) {
+  const isValid = /^https?:\/\//i.test(src) || src.startsWith("data:");
+  if (!isValid) return null;
   return (
     <div className="mb-4 relative w-full h-48">
       <Image
@@ -67,10 +69,10 @@ export default function StoryCard({
   const dateStr = pickStringLoose(story, "publishedAt") ?? "";
 
   const oneLiner = isSummaryItem(story) ? enforceLen(story.oneLiner) : summary;
-  const bullets = isSummaryItem(story) && story.bullets
-    ? [story.bullets.who, story.bullets.what, story.bullets.where, story.bullets.when, story.bullets.why]
-        .map((v) => enforceLen(v))
-        .filter((v) => v && v.trim().length > 0)
+  const bullets = isSummaryItem(story)
+    ? (['who', 'what', 'when', 'where', 'why'] as const).map((k) =>
+        enforceLen((story.bullets as Record<string, string | undefined> | undefined)?.[k])
+      )
     : [];
   const colorNote = isSummaryItem(story) ? story.colorNote ?? "" : "";
   const sources = isSummaryItem(story) ? story.sources ?? [] : [];
@@ -152,7 +154,7 @@ export default function StoryCard({
         <p className="text-sm mb-3 text-gray-700 dark:text-gray-300">{oneLiner}</p>
       )}
 
-      {bullets.length > 0 && (
+      {isSummaryItem(story) && (
         <ul className={`list-disc list-inside space-y-1.5 mb-3 text-sm ${isLocked ? "blur-sm select-none pointer-events-none" : ""}`}>
           {bullets.map((text, idx) => (
             <li key={idx} className="truncate" title={text}>{text}</li>

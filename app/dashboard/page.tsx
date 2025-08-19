@@ -10,8 +10,30 @@ import { ObjectId } from "mongodb";
 
 import { authOptions } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
-import type { NewsStory } from "@/types";
+import type { SummaryItem } from "../types";
 import StoryCard from "../components/StoryCard";
+
+// Shape of the story as stored in MongoDB
+type StoryDoc = {
+  _id: ObjectId;
+  title?: string;
+  url?: string;
+  summary?: {
+    oneLiner?: string;
+    bullets?: {
+      who?: string;
+      what?: string;
+      when?: string;
+      where?: string;
+      why?: string;
+    };
+    colorNote?: string;
+  };
+  imageUrl?: string;
+  publishedAt?: Date | string;
+  source?: string;
+  sources?: string[];
+};
 
 export default async function DashboardPage() {
   // ===== Session Check =====
@@ -39,14 +61,47 @@ export default async function DashboardPage() {
     .sort({ publishedAt: -1 })
     .toArray();
 
-  // ===== Map to NewsStory Interface =====
-  const stories: NewsStory[] = storyDocs.map(doc => ({
-    id: doc._id.toString(),
-    title: doc.title,
-    url: doc.url,
-    summary: doc.summary,
-    publishedAt: doc.publishedAt.toISOString(),
-  }));
+  // ===== Map to SummaryItem Interface =====
+  const stories: SummaryItem[] = (storyDocs as StoryDoc[]).map((doc) => {
+    const url = doc.url || "";
+    const publishedAt =
+      doc.publishedAt instanceof Date
+        ? doc.publishedAt.toISOString()
+        : typeof doc.publishedAt === "string"
+        ? doc.publishedAt
+        : undefined;
+
+    return {
+      id: doc._id.toString(),
+      title: doc.title ?? "Untitled",
+      url,
+      oneLiner: doc.summary?.oneLiner ?? "",
+      bullets: {
+        who: doc.summary?.bullets?.who ?? "",
+        what: doc.summary?.bullets?.what ?? "",
+        when: doc.summary?.bullets?.when ?? "",
+        where: doc.summary?.bullets?.where ?? "",
+        why: doc.summary?.bullets?.why ?? "",
+      },
+      colorNote: doc.summary?.colorNote ?? "",
+      imageUrl: doc.imageUrl ?? undefined,
+      publishedAt: publishedAt ?? "",
+      source: doc.source ?? (url ? new URL(url).hostname.replace(/^www\./, "") : ""),
+      sources: Array.isArray(doc.sources)
+        ? doc.sources.map((src) => {
+            try {
+              const u = new URL(src);
+              const host = u.hostname.replace(/^www\./, "");
+              return { title: host, domain: host, url: src };
+            } catch {
+              // Fallback if src isn't a valid absolute URL
+              const safe = (src || "").toString();
+              return { title: safe, domain: safe, url: safe };
+            }
+          })
+        : [],
+    } satisfies SummaryItem;
+  });
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">

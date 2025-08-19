@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/api/news/fetch/route.ts
 import { NextResponse } from 'next/server';
 import fetchNewsFromSource from '@/lib/fetchNews';
@@ -32,14 +33,22 @@ type SummaryOp = {
 
 async function extractOgImage(url: string): Promise<string | undefined> {
   try {
-    const res = await fetch(url, { method: "GET", redirect: "follow" });
+    // basic absolute URL guard
+    const ok = /^https?:\/\//i.test(url);
+    if (!ok) return undefined;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
+    clearTimeout(timer);
     const html = await res.text();
     const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i);
     if (ogMatch?.[1]) return ogMatch[1];
     const twMatch = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["'][^>]*>/i);
     if (twMatch?.[1]) return twMatch[1];
   } catch {
-    // ignore network/parse errors
+    // ignore network/parse/abort errors
   }
   return undefined;
 }
@@ -90,12 +99,12 @@ export async function GET(request: Request) {
     stories.map(async (s: IngestStory) => {
       const url: string = s.url || s.link || "";
       const title: string = s.title || s.headline || "Untitled";
-      const source: string = s.source || toDomain(url) || "";
+      const source: string = s.source || toDomain(url || s.link || "") || "";
       const publishedAt: string = toISO(s.publishedAt) ?? toISO(s.pubDate) ?? new Date().toISOString();
       const body: string = s.content || s.description || s.snippet || s.excerpt || title;
 
-      // Fetch image (og/twitter) with fallback
-      const imageUrl = (await extractOgImage(url)) || s.imageUrl || s.image || undefined;
+      // Prefer feed image, only fetch HTML if missing
+      const imageUrl = s.imageUrl || s.image || (await extractOgImage(url)) || undefined;
 
       // Summarize into 5Ws + lens + one-liner
       let oneLiner = "";
@@ -104,8 +113,14 @@ export async function GET(request: Request) {
       try {
         const ai = await summarizeWithPerspective(body);
         oneLiner = ai.oneLiner;
-        bullets = ai.bullets;
-        colorNote = ai.colorNote;
+        bullets = {
+          who: ai.bullets?.who ?? "",
+          what: ai.bullets?.what ?? "",
+          where: ai.bullets?.where ?? "",
+          when: ai.bullets?.when ?? "",
+          why: ai.bullets?.why ?? "",
+        };
+        colorNote = ai.colorNote ?? "";
       } catch {
         // leave minimal fields if summarization fails
         oneLiner = title;

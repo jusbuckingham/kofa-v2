@@ -1,6 +1,6 @@
 // lib/mongoClient.ts
 import { MongoClient, MongoServerError } from "mongodb";
-import type { NewsStory } from "@/types";
+import type { NewsStory } from "../app/types";
 
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB_NAME;
@@ -14,14 +14,11 @@ if (!dbName) {
 
 // Use a global to prevent exhausting connections in dev:
 const client = new MongoClient(uri);
+const g = globalThis as typeof globalThis & { _mongoClientPromise?: Promise<MongoClient> };
 const clientPromise =
   process.env.NODE_ENV === "development"
-    ? global._mongoClientPromise || (global._mongoClientPromise = client.connect())
+    ? g._mongoClientPromise || (g._mongoClientPromise = client.connect())
     : client.connect();
-
-declare global {
-  var _mongoClientPromise: Promise<MongoClient> | undefined;
-}
 
 export async function insertStoriesIntoMongo(
   stories: NewsStory[]
@@ -29,8 +26,8 @@ export async function insertStoriesIntoMongo(
   const client = await clientPromise;
   const db = client.db(dbName);
 
-  // Ensure a unique index on title and link before inserting
-  await db.collection<NewsStory>("stories").createIndex({ title: 1, link: 1 }, { unique: true });
+  // Ensure a unique index on canonical URL before inserting (avoids dupes)
+  await db.collection<NewsStory>("stories").createIndex({ url: 1 }, { unique: true });
 
   try {
     const insertResult = await db

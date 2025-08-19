@@ -2,10 +2,12 @@ import clientPromise from "@/lib/mongodb";
 
 // Number of free summaries per day for non-subscribers
 // Prefer FREE_SUMMARIES_PER_DAY; fall back to old FREE_READS_PER_DAY for compatibility
-export const FREE_SUMMARIES_PER_DAY =
-  Number.isFinite(Number(process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY))
-    ? Number(process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY)
-    : 3;
+const _rawFreeLimit = process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY;
+const _parsedFreeLimit = Number(_rawFreeLimit);
+export const FREE_SUMMARIES_PER_DAY = Number.isFinite(_parsedFreeLimit) ? _parsedFreeLimit : 3;
+if (process.env.NODE_ENV === "development" && _rawFreeLimit !== undefined && !Number.isFinite(_parsedFreeLimit)) {
+  console.warn("[quota] Invalid FREE_SUMMARIES_PER_DAY='" + _rawFreeLimit + "' — defaulting to 3");
+}
 
 export interface QuotaResult {
   // New canonical fields
@@ -45,9 +47,11 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
   const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserMetaDoc>("user_metadata");
 
+  const keyEmail = email.trim().toLowerCase();
+
   const todayKey = startOfUTCday();
 
-  const doc = await coll.findOne({ email });
+  const doc = await coll.findOne({ email: keyEmail });
 
   // If no document exists, create a fresh one
   if (!doc) {
@@ -56,7 +60,7 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
     const hasActiveSub = false;
 
     await coll.insertOne({
-      email,
+      email: keyEmail,
       summariesViewedToday: summariesToday,
       summariesTotal: totalSummaries,
       lastResetUTC: todayKey,
@@ -87,7 +91,7 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
   if (hasActiveSub) {
     if (increment) {
       await coll.updateOne(
-        { email },
+        { email: keyEmail },
         {
           $set: { lastResetUTC: todayKey },
           $inc: { summariesViewedToday: 1, summariesTotal: 1 },
@@ -97,7 +101,7 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
       totalSummaries += 1;
     } else if (reset) {
       await coll.updateOne(
-        { email },
+        { email: keyEmail },
         { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
       );
     }
@@ -120,7 +124,7 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
 
   if (increment && allowed) {
     await coll.updateOne(
-      { email },
+      { email: keyEmail },
       {
         $set: { lastResetUTC: todayKey },
         $inc: { summariesViewedToday: 1, summariesTotal: 1 },
@@ -130,7 +134,7 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
     totalSummaries += 1;
   } else if (reset) {
     await coll.updateOne(
-      { email },
+      { email: keyEmail },
       { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
     );
   }

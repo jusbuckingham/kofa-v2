@@ -14,7 +14,14 @@ export type QuotaContextValue = {
   remaining: number | null;
   limit: number | null;
   hasActiveSub: boolean;
+  loading: boolean;
   refresh: () => Promise<void>;
+};
+
+type QuotaApiResponse = {
+  remaining: number | null;
+  limit: number | null;
+  hasActiveSub: boolean;
 };
 
 const ReadQuotaContext = createContext<QuotaContextValue | undefined>(undefined);
@@ -24,24 +31,29 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [limit, setLimit] = useState<number | null>(null);
   const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/user/read");
+      const res = await fetch("/api/user/read", { cache: "no-store" });
       if (res.status === 401) {
-        // User not authenticated; set default free summaries
         setRemaining(null);
         setLimit(null);
         setHasActiveSub(false);
         return;
       }
       if (!res.ok) throw new Error("Failed to fetch quota");
-      const data = (await res.json()) as QuotaContextValue;
+      const data: QuotaApiResponse = await res.json();
       setRemaining(data.remaining);
       setLimit(data.limit);
       setHasActiveSub(data.hasActiveSub);
     } catch (err) {
-      console.error("Error refreshing quota:", err);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Error refreshing quota:", err);
+      }
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -51,7 +63,7 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
 
   return (
     <ReadQuotaContext.Provider
-      value={{ remaining, limit, hasActiveSub, refresh }}
+      value={{ remaining, limit, hasActiveSub, loading, refresh }}
     >
       {children}
     </ReadQuotaContext.Provider>

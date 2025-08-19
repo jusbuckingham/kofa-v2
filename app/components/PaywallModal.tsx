@@ -75,7 +75,7 @@ export default function PaywallModal({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs font-medium text-neutral-600 dark:text-neutral-400">
               <span>
-                Daily Reads Used: {used}/{totalFreeReads}
+                Daily Summaries Used: {used}/{totalFreeReads}
               </span>
               <span>{percent}%</span>
             </div>
@@ -100,7 +100,7 @@ export default function PaywallModal({
               className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-neutral-900"
               prefetch={false}
             >
-              View Plans
+              Subscribe Now
             </Link>
             <button
               onClick={onClose}

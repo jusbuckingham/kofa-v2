@@ -15,6 +15,7 @@ export default function HomePage() {
   const [stories, setStories] = useState<SummaryItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
+  const [freeLimit, setFreeLimit] = useState(3);
   const [loading, setLoading] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
 
@@ -91,27 +92,48 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/user/read', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && typeof data?.limit === 'number') {
+          setFreeLimit(data.limit);
+        }
+      } catch {
+        // ignore; keep default
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <main className="max-w-3xl mx-auto p-4">
       {!hasActiveSub && <ReadQuotaBanner />}
       <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Summaries</h2>
       <ul className="space-y-6">
-        {stories.map(story => (
-          <li key={story.id}>
-            <StoryCard
-              story={story}
-              isSaved={savedSet.has(story.id)}
-              onSaved={(id: string) => {
-                setSavedSet(prev => {
-                  const next = new Set(prev);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                });
-              }}
-            />
-          </li>
-        ))}
+        {stories.map((story, idx) => {
+          const shouldLock = !hasActiveSub && idx >= freeLimit;
+          const storyWithLock = ({ ...story, locked: shouldLock }) as SummaryItem;
+          return (
+            <li key={story.id}>
+              <StoryCard
+                story={storyWithLock}
+                isSaved={savedSet.has(story.id)}
+                onSaved={(id: string) => {
+                  setSavedSet(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
+              />
+            </li>
+          );
+        })}
         {loading &&
           Array.from({ length: LIMIT }).map((_, i) => (
             <li key={`skeleton-${i}`}>

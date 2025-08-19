@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
@@ -13,12 +13,14 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
+  const [freeLimit, setFreeLimit] = useState<number>(3);
 
   const loadMore = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/news?page=${page + 1}`);
+      const res = await fetch(`/api/news?page=${page + 1}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       // New API shape: { ok, stories: SummaryItem[], total }
       const json = (await res.json()) as { ok: boolean; stories: SummaryItem[]; total: number };
@@ -36,12 +38,32 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/user/read', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setHasActiveSub(Boolean(data?.hasActiveSub));
+          if (typeof data?.limit === 'number') setFreeLimit(data.limit);
+        }
+      } catch {
+        // ignore; defaults apply
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {summaries.map((s, i) => {
           const key = s.id ?? `summary-${i}`;
-          return <StoryCard key={key} story={s} />;
+          const shouldLock = !hasActiveSub && i >= freeLimit;
+          const storyWithLock = ({ ...s, locked: shouldLock });
+          return <StoryCard key={key} story={storyWithLock} />;
         })}
       </div>
       {error && <p className="text-red-500">{error}</p>}

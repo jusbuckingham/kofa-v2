@@ -31,9 +31,27 @@ function extractImageFromItem(item: Parser.Item): string | undefined {
   const enc = (item as Parser.Item & { enclosure?: { url?: string } }).enclosure?.url;
   if (enc) return enc;
 
-  // 2) content:encoded or content <img src>
+  // 2) media:content / media:thumbnail (common in many feeds)
+  const mediaContent = (item as Record<string, unknown>)["media:content"] as
+    | { url?: string }
+    | Array<{ url?: string }>
+    | undefined;
+  if (Array.isArray(mediaContent)) {
+    const m = mediaContent.find((m) => typeof m?.url === "string");
+    if (m?.url) return m.url;
+  } else if (mediaContent && typeof mediaContent.url === "string") {
+    return mediaContent.url;
+  }
+  const mediaThumb = (item as Record<string, unknown>)["media:thumbnail"] as { url?: string } | undefined;
+  if (mediaThumb?.url) return mediaThumb.url;
+
+  // 3) itunes:image
+  const itunesImage = (item as Record<string, unknown>)["itunes:image"] as { href?: string } | undefined;
+  if (itunesImage?.href) return itunesImage.href;
+
+  // 4) first <img> in content/content:encoded
   const html =
-    (item as Record<string, unknown>)["content:encoded"] as string | undefined ??
+    ((item as Record<string, unknown>)["content:encoded"] as string | undefined) ??
     (typeof item.content === "string" ? item.content : "");
   const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
   if (imgMatch?.[1]) return imgMatch[1];

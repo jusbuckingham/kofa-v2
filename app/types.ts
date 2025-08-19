@@ -11,11 +11,11 @@ export interface NewsStory {
 }
 
 export type FiveWs = {
-  who: string;
-  what: string;
-  where: string;
-  when: string;
-  why: string;
+  who?: string;
+  what?: string;
+  where?: string;
+  when?: string;
+  why?: string;
 };
 
 export type SourceRef = {

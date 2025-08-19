@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
@@ -19,6 +19,9 @@ export default function NewsList({
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState<number | null>(null);
+
+  const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
+  const [freeLimit, setFreeLimit] = useState<number>(3);
 
   // Ensure we always have a Set to call .has on, even if an array was passed from the server
   const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
@@ -62,14 +65,38 @@ export default function NewsList({
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/user/read', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setHasActiveSub(Boolean(data?.hasActiveSub));
+          if (typeof data?.limit === 'number') setFreeLimit(data.limit);
+        }
+      } catch {
+        // ignore network errors; fallback defaults apply
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {summaries.map((summary, idx) => (
-          <div key={summary.id ?? idx} className="fade-in">
-            <StoryCard story={summary} isSaved={savedSet.has(summary.id)} />
-          </div>
-        ))}
+        {summaries.map((summary, idx) => {
+          const shouldLock = !hasActiveSub && idx >= freeLimit;
+          const storyWithLock = ('oneLiner' in summary)
+            ? ({ ...summary, locked: shouldLock } as SummaryItem)
+            : summary;
+          return (
+            <div key={summary.id ?? idx} className="fade-in">
+              <StoryCard story={storyWithLock} isSaved={savedSet.has(summary.id)} />
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-6 flex flex-col items-center">

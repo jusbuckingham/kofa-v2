@@ -21,11 +21,16 @@ export default async function summarizeWithPerspective(
   const messages: Array<{ role: "system" | "user"; content: string }> = [
     {
       role: "system",
-      content: `Extract structured news summary.
-Return JSON with keys: oneLiner, bullets, colorNote.
-bullets must have keys: who, what, where, when, why.
-Each bullet <=120 chars. oneLiner <=120 chars.
-colorNote is 1-2 sentences from a Black American perspective.`,
+      content: `Extract a structured news summary as strict JSON.
+Return ONLY a JSON object with keys: oneLiner, bullets, colorNote.
+\`bullets\` MUST contain EXACTLY these keys: who, what, where, when, why.
+Rules:
+- Do NOT include labels like "Who:" in bullet text.
+- Each bullet MUST be <= 120 characters.
+- \`oneLiner\` MUST be <= 120 characters.
+- If a culturally-aware Black American perspective fits naturally, weave it into the bullet phrasing; if not, do not force it.
+- \`colorNote\` may be empty. If used, keep it 1–2 sentences.
+`,
     },
     {
       role: "user",

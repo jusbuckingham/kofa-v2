@@ -1,6 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+// --- Type safety and helpers ---
+interface NewsResponse {
+  stories?: { publishedAt?: string; createdAt?: string }[];
+  message?: string;
+  error?: string;
+  inserted?: number;
+}
+
+const formatDate = (ts?: string | null) =>
+  ts ? new Date(ts).toLocaleString() : new Date().toLocaleString();
 // Removed Kinde auth and UI button imports for unauthenticated testing
 
 export default function AdminPage() {
@@ -13,10 +23,10 @@ export default function AdminPage() {
     const fetchLast = async () => {
       try {
         const res = await fetch('/api/news?limit=1&sort=newest', { cache: 'no-store' });
-        const json = await res.json();
+        const json: NewsResponse = await res.json();
         if (Array.isArray(json.stories) && json.stories.length > 0) {
-          const ts = json.stories[0].publishedAt || json.stories[0].createdAt;
-          setLastRun(ts ? new Date(ts).toLocaleString() : new Date().toLocaleString());
+          const ts = json.stories[0].publishedAt || json.stories[0].createdAt || null;
+          setLastRun(formatDate(ts));
         }
       } catch (err) {
         console.error('Failed to fetch last run:', err);
@@ -31,13 +41,14 @@ export default function AdminPage() {
     setStatus('Running fetch...');
     try {
       const res = await fetch('/api/news/fetch', { method: 'GET', cache: 'no-store' });
-      const json = await res.json();
-      setStatus(json.message || json.error || `Inserted ${json.inserted ?? 0} item(s)`);
+      const json: NewsResponse = await res.json();
+      const msg = json.message || json.error || `Inserted ${json.inserted ?? 0} item(s)`;
+      setStatus(msg);
       // Update last run
-      setLastRun(new Date().toLocaleString());
+      setLastRun(formatDate(null));
     } catch (err) {
-      console.error(err);
-      setStatus('Error running fetch');
+      console.error('Fetch run failed:', err);
+      setStatus(`❌ Error running fetch`);
     }
   };
 
@@ -59,8 +70,12 @@ export default function AdminPage() {
           {status === 'Running fetch...' ? 'Fetching…' : 'Run Fetch-News'}
         </button>
         {status && (
-          <div className="mt-2">
-            <p>Status: {status}</p>
+          <div className="mt-2" role="status" aria-live="polite">
+            <p>
+              <span className="inline-block rounded bg-gray-100 dark:bg-gray-800 px-2 py-1 text-sm">
+                Status: {status}
+              </span>
+            </p>
           </div>
         )}
       </div>

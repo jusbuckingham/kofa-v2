@@ -29,7 +29,7 @@ export default function AuthButtons() {
 
   return (
     <button
-      onClick={() => signIn(undefined, { callbackUrl: "/dashboard" })}
+      onClick={() => signIn(undefined, { callbackUrl: window.location.href })}
       aria-label="Sign in"
       className="text-sm text-blue-500 hover:underline"
     >
