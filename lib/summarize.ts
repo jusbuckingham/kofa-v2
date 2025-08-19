@@ -21,13 +21,20 @@ export default async function summarizeWithPerspective(
     {
       role: "system",
       content: `Extract a concise news summary as strict JSON. Return ONLY a JSON object with keys: oneLiner, bullets.
-Rules:
-- \`bullets\` MUST be an array with EXACTLY 4 strings.
-- Do NOT include labels like "Who:"—just the content of each point.
-- Each bullet MUST be \u2264 120 characters.
-- \`oneLiner\` MUST be \u2264 120 characters.
-- If a culturally-aware Black American perspective fits naturally, weave it in; if not, don’t force it.
-`,
+Style:
+- Speak as Kofa, a trusted guide for Black readers, delivering clear, conversational "need to know" insights.
+- Frame context explicitly from a Black perspective: history, systemic patterns, equity, community impact, and accountability.
+- Talk directly and personally to the reader with warmth and clarity.
+- Avoid stereotypes or tokenizing; uplift authentic community voices and lived experience.
+- Maintain a grounded, respectful tone—no slang, hashtags, or emojis.
+Formatting:
+- \`bullets\` MUST be an array with EXACTLY 4 strings—each should stand alone and read like a takeaway.
+- Bullets may include multiple short sentences (tweet-like); keep the total per bullet ≤ 120 characters.
+- No labels like "Who:"—just the content of each point.
+- Each bullet MUST be ≤ 120 characters (aim for ~90–120).
+Notes:
+- If the Black community context is not genuinely relevant, keep the bullet neutral and factual.
+- Prioritize clarity, dignity, and usefulness to Black readers.`,
     },
     {
       role: "user",
@@ -37,10 +44,21 @@ ${text}`,
     },
   ];
 
-  // Helper to enforce length limits
+  // Helper to enforce length limits (tweet-friendly, word-safe, normalizes whitespace)
   function enforce(str?: string, max = 120): string {
     if (!str) return "";
-    return str.length > max ? str.slice(0, max - 1).trim() + "…" : str;
+    // normalize whitespace
+    const clean = str.replace(/\s+/g, " ").trim();
+    if (clean.length <= max) return clean;
+
+    const slice = clean.slice(0, max - 1);
+    // try to cut on a word boundary
+    const cutAt = slice.lastIndexOf(" ");
+    let base = cutAt > 40 ? slice.slice(0, cutAt) : slice; // don't over-trim short lines
+    // remove trailing punctuation/spaces before adding ellipsis
+    // Trim trailing spaces and common ASCII punctuation without requiring the 'u' regex flag
+    base = base.replace(/[\s!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]+$/, "").trim();
+    return base + "…";
   }
 
   function normalizeBullets(input: unknown, max = 120): string[] {
@@ -80,9 +98,9 @@ ${text}`,
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      temperature: 0.3,
+      temperature: 0.35,
       response_format: { type: "json_object" },
-      max_tokens: 300,
+      max_tokens: 320,
     });
     const raw = response.choices[0].message.content ?? "";
     const parsed = parseJsonLoose(raw);
@@ -99,9 +117,9 @@ ${text}`,
       const fallback = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages,
-        temperature: 0.3,
+        temperature: 0.35,
         response_format: { type: "json_object" },
-        max_tokens: 300,
+        max_tokens: 320,
       });
       const raw = fallback.choices[0].message.content ?? "";
       const parsed = parseJsonLoose(raw);
