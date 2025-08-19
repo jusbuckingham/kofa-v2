@@ -8,38 +8,38 @@ export interface MailParams {
 }
 
 // --- Env parsing & validation ---
-const MAIL_HOST = process.env.MAIL_HOST;
-const RAW_MAIL_PORT = process.env.MAIL_PORT;
-const MAIL_USER = process.env.MAIL_USER;
-const MAIL_PASS = process.env.MAIL_PASS;
-const MAIL_FROM = process.env.MAIL_FROM || '"Kofa" <no-reply@kofa.ai>';
+const EMAIL_SERVER_HOST = process.env.EMAIL_SERVER_HOST;
+const RAW_EMAIL_SERVER_PORT = process.env.EMAIL_SERVER_PORT;
+const EMAIL_SERVER_USER = process.env.EMAIL_SERVER_USER;
+const EMAIL_SERVER_PASSWORD = process.env.EMAIL_SERVER_PASSWORD;
+const EMAIL_FROM = process.env.EMAIL_FROM || '"Kofa" <no-reply@kofa.ai>';
 
-const MAIL_PORT = Number.isFinite(Number(RAW_MAIL_PORT)) ? Number(RAW_MAIL_PORT) : 587;
+const EMAIL_SERVER_PORT = Number.isFinite(Number(RAW_EMAIL_SERVER_PORT)) ? Number(RAW_EMAIL_SERVER_PORT) : 587;
 
-if (!MAIL_HOST || !MAIL_USER || !MAIL_PASS) {
+if (!EMAIL_SERVER_HOST || !EMAIL_SERVER_USER || !EMAIL_SERVER_PASSWORD) {
   // Fail fast with a clear configuration error.
   throw new Error(
-    '[mailer] Missing required environment variables. Please set MAIL_HOST, MAIL_USER, MAIL_PASS (and optionally MAIL_PORT, MAIL_FROM).'
+    '[mailer] Missing required environment variables. Please set EMAIL_SERVER_HOST, EMAIL_SERVER_USER, EMAIL_SERVER_PASSWORD (and optionally EMAIL_SERVER_PORT, EMAIL_FROM).'
   );
 }
 
 // If port is 465, use secure SMTP; otherwise, STARTTLS is typical on 587
-const secure = MAIL_PORT === 465;
+const secure = EMAIL_SERVER_PORT === 465;
 
 const transporter: Transporter = nodemailer.createTransport({
-  host: MAIL_HOST,
-  port: MAIL_PORT,
+  host: EMAIL_SERVER_HOST,
+  port: EMAIL_SERVER_PORT,
   secure,
   auth: {
-    user: MAIL_USER,
-    pass: MAIL_PASS,
+    user: EMAIL_SERVER_USER,
+    pass: EMAIL_SERVER_PASSWORD,
   },
 });
 
 export async function sendMail({ to, subject, html }: MailParams): Promise<SentMessageInfo> {
   try {
     const info = await transporter.sendMail({
-      from: MAIL_FROM,
+      from: EMAIL_FROM,
       to,
       subject,
       html,
