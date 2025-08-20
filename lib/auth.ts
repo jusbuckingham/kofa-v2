@@ -1,6 +1,5 @@
 import type { NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import CredentialsProvider from "next-auth/providers/credentials";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import clientPromise from "@/lib/mongodb";
 import type { Session } from "next-auth";
@@ -30,19 +29,6 @@ type SessionUserWithBilling = Session["user"] & {
 export const authOptions: NextAuthOptions = {
   adapter: MongoDBAdapter(clientPromise),
   providers: [
-    CredentialsProvider({
-      id: "demo",
-      name: "Demo Login",
-      credentials: {
-        email: { label: "Email", type: "email", placeholder: "demo@example.com" },
-      },
-      async authorize(credentials) {
-        if (credentials?.email) {
-          return { id: credentials.email, email: credentials.email };
-        }
-        return null;
-      },
-    }),
     EmailProvider({
       server: {
         host: getEnvVar("EMAIL_SERVER_HOST"),
