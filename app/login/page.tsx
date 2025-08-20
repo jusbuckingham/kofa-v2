@@ -2,6 +2,11 @@
 import React from 'react'
 import Link from "next/link";
 
+export const metadata = {
+  title: 'Login - Kofa',
+  description: 'Log in to your Kofa account to access your personalized dashboard and subscription details.'
+}
+
 export default function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center">

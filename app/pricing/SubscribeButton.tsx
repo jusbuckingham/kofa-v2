@@ -2,12 +2,9 @@
 
 import React, { useState } from "react";
 
-interface SubscribeButtonProps {
-  priceId: string;
-}
-
-export default function SubscribeButton({ priceId }: SubscribeButtonProps) {
+export default function SubscribeButton() {
   const [loading, setLoading] = useState(false);
+  const priceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ID || process.env.STRIPE_PRICE_ID;
 
   const handleSubscribe = async () => {
     setLoading(true);

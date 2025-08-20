@@ -14,6 +14,8 @@ export default function ManageSubscriptionPage() {
   const { status } = useSession();
   const [sub, setSub] = useState<Sub | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,9 +25,15 @@ export default function ManageSubscriptionPage() {
         const res = await fetch('/api/stripe/subscription', { cache: 'no-store' });
         if (!res.ok) throw new Error('Failed to load subscription');
         const { data } = (await res.json()) as { data: Sub | null };
-        if (!cancelled) setSub(data ?? null);
+        if (!cancelled) {
+          setSub(data ?? null);
+          setError(null);
+        }
       } catch {
-        if (!cancelled) setSub(null);
+        if (!cancelled) {
+          setSub(null);
+          setError('We couldn\'t load your subscription right now. Please try again.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -36,21 +44,24 @@ export default function ManageSubscriptionPage() {
   }, [status]);
 
   const handlePortal = async () => {
+    setPortalLoading(true);
+    setError(null);
     try {
       const res = await fetch('/api/stripe/subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'portal' }),
       });
-      if (!res.ok) throw new Error('Request failed');
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert('Error: ' + (data.error || 'Unable to open portal'));
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !data?.url) {
+        setError(data?.error || 'Could not open billing portal.');
+        return;
       }
+      window.location.href = data.url;
     } catch {
-      alert('Error: Unable to open portal');
+      setError('Could not open billing portal.');
+    } finally {
+      setPortalLoading(false);
     }
   };
 
@@ -60,6 +71,11 @@ export default function ManageSubscriptionPage() {
     return (
       <div>
         <h1>Manage Subscription</h1>
+        {error && (
+          <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
+            {error}
+          </div>
+        )}
         <p>You don’t have an active subscription.</p>
         <Link href="/pricing" className="inline-block mt-2 rounded bg-blue-600 px-3 py-1 text-white hover:bg-blue-700">
           View Plans
@@ -73,11 +89,20 @@ export default function ManageSubscriptionPage() {
   return (
     <div>
       <h1>Manage Subscription</h1>
+      {error && (
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
+          {error}
+        </div>
+      )}
       <p>Plan: {sub.plan}</p>
       <p>Status: {sub.status}</p>
       <p>Current period ends: {endDate}</p>
-      <button onClick={handlePortal} style={{ marginTop: '0.5rem' }}>
-        Manage in Customer Portal
+      <button
+        onClick={handlePortal}
+        disabled={portalLoading}
+        className="mt-2 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+      >
+        {portalLoading ? 'Opening…' : 'Manage in Customer Portal'}
       </button>
     </div>
   );
