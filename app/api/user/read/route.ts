@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { incrementSummaryView, peekSummaryQuota } from "@/lib/quota";
 
-const FREE_SUMMARIES_PER_DAY = 3;
+const FREE_SUMMARIES_PER_DAY = Number(process.env.FREE_SUMMARIES_PER_DAY ?? 3) || 3;
 
 // GET = just check quota
 export async function GET(req: NextRequest) {
@@ -22,11 +22,25 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const res = await peekSummaryQuota(token.email);
-  return NextResponse.json({
-    ...res,
-    limit: FREE_SUMMARIES_PER_DAY,
-  });
+  try {
+    const res = await peekSummaryQuota(token.email);
+    return NextResponse.json({
+      ...res,
+      limit: FREE_SUMMARIES_PER_DAY,
+    });
+  } catch (err) {
+    console.error('[user/read GET] quota error:', err);
+    return NextResponse.json(
+      {
+        hasActiveSub: false,
+        summariesToday: 0,
+        allowed: true,
+        limit: FREE_SUMMARIES_PER_DAY,
+        error: 'internal_error',
+      },
+      { status: 500 }
+    );
+  }
 }
 
 // POST = increment (call when a story is actually opened)
@@ -51,24 +65,29 @@ export async function POST(req: NextRequest) {
     // ignore malformed JSON; keep default increment=true
   }
 
-  const res = increment
-    ? await incrementSummaryView(token.email)
-    : await peekSummaryQuota(token.email);
+  try {
+    const res = increment
+      ? await incrementSummaryView(token.email)
+      : await peekSummaryQuota(token.email);
 
-  if (!res.allowed) {
-    return NextResponse.json(
-      {
-        ...res,
-        error: "quota_exceeded",
-        message: `Free quota of ${FREE_SUMMARIES_PER_DAY} summaries per day reached.`,
-        limit: FREE_SUMMARIES_PER_DAY,
-      },
-      { status: 402 }
-    );
+    if (!res.allowed) {
+      return NextResponse.json(
+        {
+          ...res,
+          error: 'quota_exceeded',
+          message: `Free quota of ${FREE_SUMMARIES_PER_DAY} summaries per day reached.`,
+          limit: FREE_SUMMARIES_PER_DAY,
+        },
+        { status: 402 }
+      );
+    }
+
+    return NextResponse.json({
+      ...res,
+      limit: FREE_SUMMARIES_PER_DAY,
+    });
+  } catch (err) {
+    console.error('[user/read POST] quota error:', err);
+    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
   }
-
-  return NextResponse.json({
-    ...res,
-    limit: FREE_SUMMARIES_PER_DAY,
-  });
 }

@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { getServerSession } from "next-auth/next";
 import type { SubscriptionStatus } from "@/lib/constants";
-import {
-  FREE_DAILY_STORY_LIMIT,
-  isSubscribedFromStripeObjects,
-  todayUtcISO,
-  todayUTC,
-} from "@/lib/constants";
+import { FREE_DAILY_STORY_LIMIT, todayUtcISO, todayUTC } from "@/lib/constants";
 import { authOptions } from "@/lib/auth";
 
 import type { WithId, ObjectId } from "mongodb";
@@ -29,7 +24,7 @@ export async function GET() {
   }
   const userEmail = session.user.email;
   const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME);
+  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserMetadataDoc>("user_metadata");
 
   let doc: WithId<UserMetadataDoc> | null = await coll.findOne({ userEmail });
@@ -60,56 +55,60 @@ export async function PATCH(request: Request) {
   };
 
   const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME);
+  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserMetadataDoc>("user_metadata");
 
   const today = todayUtcISO();
-  const update: Partial<UserMetadataDoc> = {};
-  if (incrementRead) {
-    update.totalReads = 1; // use $inc operator below
-    update.lastLogin = todayUTC();
-  }
-
+  const hasActiveSub = Boolean(session.user.hasActiveSub);
   const result = await coll.findOneAndUpdate(
     { userEmail },
     [
+      // On first write or subsequent writes, ensure essential fields exist
       {
         $set: {
+          userEmail,
+          // If dailyDate matches today keep it, otherwise set to today (handles undefined/null)
           dailyDate: {
             $cond: [{ $eq: ["$dailyDate", today] }, "$dailyDate", today],
           },
-        },
-      },
-      {
-        $set: {
-          dailyCount: {
-            $cond: [
-              { $eq: ["$dailyDate", today] },
-              { $add: ["$dailyCount", incrementRead ? 1 : 0] },
-              0,
-            ],
-          },
-        },
-      },
-      {
-        $addFields: {
-          canReadToday: {
-            $or: [
-              { $gte: ["$dailyCount", FREE_DAILY_STORY_LIMIT] },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              isSubscribedFromStripeObjects(session.user as any),
-            ],
-          },
-        },
-      },
-      {
-        $set: {
-          totalReads: { $add: ["$totalReads", incrementRead ? 1 : 0] },
+          // Ensure subscriptionStatus has a default
+          subscriptionStatus: { $ifNull: ["$subscriptionStatus", "none"] },
           lastLogin: todayUTC(),
         },
       },
+      {
+        $set: {
+          // If still same day, add 1 (or 0) to existing count (default 0). Otherwise start at 1 (or 0)
+          dailyCount: {
+            $cond: [
+              { $eq: ["$dailyDate", today] },
+              { $add: [{ $ifNull: ["$dailyCount", 0] }, incrementRead ? 1 : 0] },
+              incrementRead ? 1 : 0,
+            ],
+          },
+        },
+      },
+      {
+        // canReadToday = subscribed OR (dailyCount < FREE_DAILY_STORY_LIMIT)
+        $set: {
+          canReadToday: {
+            $or: [
+              { $literal: hasActiveSub },
+              { $lt: ["$dailyCount", FREE_DAILY_STORY_LIMIT] },
+            ],
+          },
+        },
+      },
+      {
+        $set: {
+          totalReads: { $add: [{ $ifNull: ["$totalReads", 0] }, incrementRead ? 1 : 0] },
+        },
+      },
     ],
-    { returnDocument: "after" }
+    {
+      upsert: true,
+      returnDocument: "after",
+    }
   );
 
   return NextResponse.json({ metadata: result.value });

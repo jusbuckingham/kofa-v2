@@ -12,6 +12,27 @@ import { authOptions } from "@/lib/auth";
 import clientPromise from "@/lib/mongodb";
 import type { SummaryItem } from "../types";
 import StoryCard from "../components/StoryCard";
+import { stripe } from "@/lib/stripe";
+import { useEffect } from "react";
+
+function CleanUrlClient() {
+  'use client';
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('session_id')) {
+        url.searchParams.delete('session_id');
+        const qs = url.searchParams.toString();
+        const next = url.pathname + (qs ? `?${qs}` : '') + (url.hash || '');
+        window.history.replaceState({}, '', next);
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+  return null;
+}
 
 // Shape of the story as stored in MongoDB
 type StoryDoc = {
@@ -28,11 +49,52 @@ type StoryDoc = {
   sources?: string[];
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
   // ===== Session Check =====
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     redirect('/signin');
+  }
+
+  // ===== Optional: Activate subscription after Stripe checkout redirect =====
+  let flashMessage: string | null = null;
+  const sessionIdRaw = searchParams?.session_id;
+  const sessionId = Array.isArray(sessionIdRaw) ? sessionIdRaw[0] : sessionIdRaw;
+
+  if (sessionId) {
+    try {
+      const cs = await stripe.checkout.sessions.retrieve(sessionId);
+      const statusOk = cs.status === 'complete' || cs.payment_status === 'paid';
+      const isSub = cs.mode === 'subscription' && !!cs.subscription;
+      const customerId = typeof cs.customer === 'string' ? cs.customer : cs.customer?.id;
+
+      if ((statusOk || isSub) && customerId) {
+        const dbName = process.env.MONGODB_DB_NAME || 'kofa';
+        const client = await clientPromise;
+        const db = client.db(dbName);
+
+        const email = session.user.email.trim().toLowerCase();
+        // Update user_metadata (or create) and optionally users collection
+        await db.collection('user_metadata').updateOne(
+          { email },
+          { $set: { email, hasActiveSub: true, stripeCustomerId: customerId, updatedAt: new Date() } },
+          { upsert: true }
+        );
+        await db.collection('users').updateOne(
+          { email },
+          { $set: { stripeCustomerId: customerId } }
+        );
+
+        flashMessage = 'Subscription activated. Welcome to Kofa Pro!';
+      }
+    } catch {
+      // Non-fatal: still render dashboard
+      flashMessage = null;
+    }
   }
 
   // ===== Database Setup =====
@@ -97,6 +159,12 @@ export default async function DashboardPage() {
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">
+      <CleanUrlClient />
+      {flashMessage && (
+        <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-2 text-green-800 dark:border-green-900/40 dark:bg-green-900/30 dark:text-green-200">
+          {flashMessage}
+        </div>
+      )}
       <h1 className="text-2xl font-bold mb-4">Your Favorites</h1>
 
       {stories.length === 0 ? (

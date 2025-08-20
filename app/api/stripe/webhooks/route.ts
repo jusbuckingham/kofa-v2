@@ -7,6 +7,13 @@ import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import clientPromise from '@/lib/mongodb';
 
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('[webhook] Missing STRIPE_SECRET_KEY');
+}
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  throw new Error('[webhook] Missing STRIPE_WEBHOOK_SECRET');
+}
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2022-11-15' });
 
 export async function POST(req: NextRequest) {
@@ -15,7 +22,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
   }
 
-  const buf = await req.arrayBuffer();
+  let buf: ArrayBuffer;
+  try {
+    buf = await req.arrayBuffer();
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
   let event: Stripe.Event;
 
   try {
@@ -31,10 +43,16 @@ export async function POST(req: NextRequest) {
 
   // Relevant Stripe event types
   const relevant = new Set<Stripe.Event['type']>([
+    // Checkout completes (immediate) or when async payments settle
     'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+
+    // Subscription lifecycle
     'customer.subscription.created',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+
+    // Billing signals
     'invoice.payment_failed',
   ]);
 
@@ -44,6 +62,7 @@ export async function POST(req: NextRequest) {
 
   const db = (await clientPromise).db(process.env.MONGODB_DB_NAME || 'kofa');
   const users = db.collection('user_metadata');
+  const usersCore = db.collection('users');
 
   const upsertUserByCustomer = async ({
     customerId,
@@ -73,6 +92,17 @@ export async function POST(req: NextRequest) {
       },
       { upsert: true }
     );
+    // Also mirror stripeCustomerId on the users collection for consistency
+    try {
+      if (email) {
+        await usersCore.updateOne(
+          { email: email.toLowerCase() },
+          { $set: { stripeCustomerId: customerId } }
+        );
+      }
+    } catch {
+      // non-fatal; some installs may not use the core users collection
+    }
   };
 
   try {

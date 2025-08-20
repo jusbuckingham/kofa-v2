@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
 
   try {
     // Connect to DB
-    const db = (await clientPromise).db(process.env.MONGODB_DB_NAME);
+    const dbName = process.env.MONGODB_DB_NAME || 'kofa';
+    const db = (await clientPromise).db(dbName);
     const users = db.collection('users');
 
     // Retrieve or create Stripe customer for signed-in user
@@ -67,9 +68,10 @@ export async function POST(req: NextRequest) {
       throw new Error("Missing STRIPE_PRICE_ID environment variable");
     }
 
-    const origin = process.env.NEXT_PUBLIC_SITE_URL;
-    if (!origin) {
-      throw new Error("Missing NEXT_PUBLIC_SITE_URL environment variable");
+    const rawOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+    const origin = rawOrigin && rawOrigin.length > 0 ? rawOrigin : 'http://localhost:3000';
+    if (!rawOrigin) {
+      console.warn('[checkout] NEXT_PUBLIC_SITE_URL not set; falling back to http://localhost:3000');
     }
 
     const checkoutSession = await stripe.checkout.sessions.create({
@@ -85,6 +87,10 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     console.error('Stripe checkout session creation failed:', err);
     const message = err instanceof Error ? err.message : 'Internal Server Error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Try to expose Stripe-specific error info when present
+    const code = typeof err === 'object' && err && 'code' in (err as Record<string, unknown>)
+      ? String((err as Record<string, unknown>).code)
+      : undefined;
+    return NextResponse.json({ error: message, code }, { status: 500 });
   }
 }

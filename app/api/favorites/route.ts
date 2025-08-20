@@ -18,6 +18,25 @@ type FavoriteInput = {
   storyId: string;
 };
 
+// Ensure a unique index on { email, storyId } to keep favorites idempotent
+let ensureIndexPromise: Promise<void> | null = null;
+async function ensureFavoritesIndex() {
+  if (!ensureIndexPromise) {
+    ensureIndexPromise = (async () => {
+      try {
+        const client = await clientPromise;
+        const db = client.db(process.env.MONGODB_DB);
+        await db
+          .collection<FavoriteDoc>("favorites")
+          .createIndex({ email: 1, storyId: 1 }, { unique: true, name: "uniq_email_story" });
+      } catch {
+        // ignore index creation errors (already exists, permissions, etc.)
+      }
+    })();
+  }
+  return ensureIndexPromise;
+}
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -34,6 +53,7 @@ async function requireSession() {
 export async function GET() {
   try {
     const email = await requireSession();
+    await ensureFavoritesIndex();
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB);
 
@@ -55,7 +75,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const email = await requireSession();
-    const body = (await req.json()) as unknown;
+    let body: unknown;
+    try {
+      body = (await req.json()) as unknown;
+    } catch {
+      return jsonError('Invalid JSON body', 400);
+    }
 
     if (!body || typeof body !== 'object' || typeof (body as FavoriteInput).storyId !== 'string') {
       return jsonError('Invalid payload: missing storyId', 422);
@@ -63,6 +88,8 @@ export async function POST(req: NextRequest) {
 
     const storyId = (body as FavoriteInput).storyId.trim();
     if (!storyId) return jsonError('storyId cannot be empty', 422);
+
+    await ensureFavoritesIndex();
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB);
@@ -86,7 +113,12 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const email = await requireSession();
-    const body = (await req.json()) as unknown;
+    let body: unknown;
+    try {
+      body = (await req.json()) as unknown;
+    } catch {
+      return jsonError('Invalid JSON body', 400);
+    }
 
     if (!body || typeof body !== 'object' || typeof (body as FavoriteInput).storyId !== 'string') {
       return jsonError('Invalid payload: missing storyId', 422);
@@ -94,6 +126,8 @@ export async function DELETE(req: NextRequest) {
 
     const storyId = (body as FavoriteInput).storyId.trim();
     if (!storyId) return jsonError('storyId cannot be empty', 422);
+
+    await ensureFavoritesIndex();
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB);

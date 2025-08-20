@@ -27,7 +27,7 @@ export default function HomePage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/news/get?limit=${LIMIT}&offset=${offset}`);
+        const res = await fetch(`/api/news/get?limit=${LIMIT}&offset=${offset}`, { cache: 'no-store' });
         if (res.ok) {
           const data = (await res.json()) as { ok?: boolean; stories: SummaryItem[]; total: number; quota?: unknown };
           if (active) {
@@ -62,8 +62,8 @@ export default function HomePage() {
       try {
         const res = await fetch('/api/favorites');
         if (res.ok) {
-          const favs = (await res.json()) as SummaryItem[];
-          setSavedSet(new Set(favs.map(s => s.id)));
+          const favs = (await res.json()) as { id: string }[];
+          setSavedSet(new Set(favs.map((s) => s.id)));
         }
       } catch {}
     }
@@ -113,6 +113,11 @@ export default function HomePage() {
     <main className="max-w-3xl mx-auto p-4">
       {!hasActiveSub && <ReadQuotaBanner />}
       <h2 className="text-2xl font-bold mb-4">Today&apos;s Top Summaries</h2>
+      {(!loading && stories.length === 0) && (
+        <div className="mb-6 rounded-md border border-gray-200 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-900/40 p-4 text-sm text-gray-700 dark:text-gray-300">
+          No summaries yet. Try again in a bit, or refresh.
+        </div>
+      )}
       <ul className="space-y-6">
         {stories.map((story, idx) => {
           const shouldLock = !hasActiveSub && idx >= freeLimit;
