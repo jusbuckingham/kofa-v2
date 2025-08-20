@@ -1,23 +1,23 @@
-'use client'
-import React from 'react'
 import Link from "next/link";
 
 export const metadata = {
-  title: 'Login - Kofa',
-  description: 'Log in to your Kofa account to access your personalized dashboard and subscription details.'
-}
+  title: "Login - Kofa",
+  description:
+    "Log in to your Kofa account to access your personalized dashboard and subscription details.",
+};
 
 export default function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center">
-      <h1 className="text-2xl mb-4">Please Log In</h1>
+      <h1 className="text-2xl mb-4 font-semibold">Please Log In</h1>
       <Link
-        href="/api/auth/login"
+        href="/signin"
         aria-label="Log in to your Kofa account"
         className="px-6 py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors duration-200"
       >
-        Log In
+        Continue with Email
       </Link>
+      <p className="mt-3 text-sm text-gray-500">You&#39;ll receive a magic link to sign in.</p>
     </main>
-  )
+  );
 }

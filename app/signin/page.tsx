@@ -1,38 +1,31 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { getCsrfToken, signIn } from "next-auth/react";
+import React, { useState } from "react";
+import { signIn } from "next-auth/react";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
-  const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getCsrfToken();
-        setCsrfToken(token ?? null);
-      } catch {
-        // silently ignore; NextAuth will still work without prefetching
-        setCsrfToken(null);
-      }
-    })();
-  }, []);
+  const validEmail = (value: string) => /.+@.+\..+/.test(value.trim());
 
   const handleEmailSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-    if (!email.trim()) return;
+
+    const trimmed = email.trim();
+    if (!validEmail(trimmed)) {
+      setError("Please enter a valid email.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      // Send magic link and return user to current page after auth
-      const cb = typeof window !== "undefined" ? window.location.href : "/dashboard";
-      const res = await signIn("email", { email: email.trim(), callbackUrl: cb, redirect: true });
-      // If redirect: true, control usually doesn't reach here on success.
-      // Keep for completeness; if res?.error exists, surface it.
+      const callbackUrl = typeof window !== "undefined" ? window.location.origin + "/dashboard" : "/dashboard";
+      // With redirect: true, NextAuth will navigate after a successful request
+      const res = await signIn("email", { email: trimmed, callbackUrl, redirect: true });
+      // If an error is returned (rare with redirect: true), surface it
       if (res && (res as unknown as { error?: string }).error) {
         setError("Could not send sign-in link. Please try again.");
       }
@@ -49,8 +42,6 @@ export default function SignInPage() {
         <h1 className="text-2xl font-bold mb-6 text-center">Sign in</h1>
 
         <form onSubmit={handleEmailSubmit} noValidate>
-          {csrfToken && <input name="csrfToken" type="hidden" defaultValue={csrfToken} />}
-
           <label htmlFor="email" className="block mb-2">
             Email
           </label>
