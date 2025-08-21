@@ -27,12 +27,12 @@ export default function HomePage() {
           Today&apos;s Top Summaries
         </h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Fresh, concise breakdowns. First 3 are free—upgrade any time for full access.
+          Fresh, concise breakdowns. First 7 are free—upgrade any time for full access.
         </p>
       </header>
 
       {/* Show 7 at a time so the footer is reachable; newest first. */}
-      <NewsList sort="publishedAt" />
+      <NewsList />
     </main>
   );
 }
