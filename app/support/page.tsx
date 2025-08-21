@@ -12,7 +12,7 @@ export default function SupportPage() {
     <main className="max-w-3xl mx-auto px-6 py-12">
       <h1 className="text-3xl font-bold mb-6">Support</h1>
       <p className="mb-4">
-        Need help? We're here for you. Below are resources and ways to get assistance with Kofa.
+        Need help? We&rsquo;re here for you. Below are resources and ways to get assistance with Kofa.
       </p>
       <ul className="list-disc pl-6 space-y-2">
         <li>
