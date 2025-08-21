@@ -41,29 +41,35 @@ function StoryImage({ src, alt }: StoryImageProps) {
   );
 }
 
-interface StoryCardProps {
-  story: NewsStory | SummaryItem;
+type StoryCardProps = {
+  // Accept any of these prop names for compatibility
+  story?: NewsStory | SummaryItem;
+  summary?: NewsStory | SummaryItem;
+  item?: NewsStory | SummaryItem;
   isSaved?: boolean;
   onSaved?: (storyId: string) => void;
-}
+  locked?: boolean;
+};
 
-export default function StoryCard({
-  story,
-  isSaved,
-  onSaved,
-}: StoryCardProps) {
+export default function StoryCard({ story: storyProp, summary, item, isSaved, onSaved, locked }: StoryCardProps) {
+  const resolved = storyProp ?? summary ?? item;
+
+  // Call hooks unconditionally (before any early returns)
   const titleId = useId();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<boolean>(Boolean(isSaved));
 
-  const isLocked = isSummaryItem(story) ? Boolean(story.locked) : false;
+  if (!resolved) return null;
+
+  const story = resolved as NewsStory | SummaryItem;
+
+  const isLocked = typeof locked === 'boolean' ? locked : (isSummaryItem(story) ? Boolean(story.locked) : false);
 
   function enforceLen(s?: string, max = 120): string {
     if (!s) return "";
     return s.length > max ? s.slice(0, max - 1).trim() + "…" : s;
   }
-
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<boolean>(Boolean(isSaved));
 
   const handleToggleSave = async () => {
     if (!("id" in story) || !story.id) return;

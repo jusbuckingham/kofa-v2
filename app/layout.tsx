@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Header from "./components/Header";
 import Providers from "./providers";
 import ReadQuotaBanner from "./components/ReadQuotaBanner";
+import Footer from "./components/Footer";
 
 export const metadata: Metadata = {
   title: "KOFA",
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ReadQuotaBanner />
             {children}
           </div>
+          <Footer />
         </Providers>
       </body>
     </html>

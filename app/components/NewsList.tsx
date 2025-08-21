@@ -1,177 +1,125 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import type { SummaryItem } from "../types";
-import StoryCard from "./StoryCard";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import StoryCard from './StoryCard';
+import SkeletonCard from './SkeletonCard';
+import type { SummaryItem } from '../types';
 
-interface NewsListProps {
-  initialSummaries?: Array<SummaryItem>;
-  savedIds?: Array<string | number>;
-}
+type GetResponse = {
+  ok: boolean;
+  stories: SummaryItem[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  // optional filters, quota, etc. ignored here
+};
 
-export default function NewsList({
-  initialSummaries = [],
-  savedIds = [],
-}: NewsListProps) {
-  const [summaries, setSummaries] = useState<Array<SummaryItem>>(initialSummaries);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const PAGE_SIZE = 7;              // fetch 7 at a time
+const FREE_VISIBLE_LIMIT = 7;     // show 7 unblurred for non-subscribers
+
+export default function NewsList() {
+  const { data: session } = useSession();
+  const isPro = Boolean(session?.user?.hasActiveSub);
+  const [items, setItems] = useState<SummaryItem[]>([]);
+  const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const firstLoadRef = useRef(false);
 
-  const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
-  const [freeLimit, setFreeLimit] = useState<number>(3);
-
-  // Local saved state, synchronized from server-provided savedIds
-  const [savedSet, setSavedSet] = useState<Set<string | number>>(new Set(savedIds));
-  useEffect(() => {
-    setSavedSet(new Set(savedIds));
-  }, [savedIds]);
-
-  // If no savedIds were provided, fetch favorites to pre-mark saved stories
-  useEffect(() => {
-    let cancelled = false;
-    if (savedIds.length > 0) return;
-    (async () => {
-      try {
-        const res = await fetch('/api/favorites', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = (await res.json()) as { id: string }[];
-        if (cancelled) return;
-        setSavedSet(prev => {
-          const next = new Set(prev);
-          for (const d of data) if (d?.id) next.add(d.id);
-          return next;
-        });
-      } catch {
-        // silently ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [savedIds.length]);
-
-  const handleSavedToggle = (id: string) => {
-    setSavedSet((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const loadMore = async () => {
-    if (loading || !hasMore) return;
+  // fetch page
+  const fetchPage = async (nextOffset: number) => {
     setLoading(true);
-    setError(null);
-
     try {
-      const res = await fetch(`/api/news?page=${page + 1}`);
-      if (!res.ok) throw new Error(`Error ${res.status}`);
-      // New API shape: { ok: boolean, stories: SummaryItem[], total: number, quota?: any }
-      const json = (await res.json()) as { ok: boolean; stories: Array<SummaryItem>; total: number };
-      const data = Array.isArray(json.stories) ? json.stories : [];
-
-      if (totalCount === null) {
-        setTotalCount(json.total);
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(nextOffset),
+        sort: 'publishedAt',
+      });
+      const res = await fetch(`/api/news/get?${params.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        setLoading(false);
+        return;
       }
-
-      if (data.length === 0) {
-        setHasMore(false);
-      } else {
-        setSummaries((prev) => [...prev, ...data]);
-        const nextPage = page + 1;
-        const loaded = summaries.length + data.length;
-        const total = json.total ?? loaded;
-        if (loaded >= total) {
-          setHasMore(false);
-        }
-        setPage(nextPage);
-      }
-    } catch (err: unknown) {
-      setError(
-        err instanceof TypeError
-          ? "Network error, check your connection and try again."
-          : "Something went wrong, please try again."
-      );
+      const data: GetResponse = await res.json();
+      setItems((prev) => (nextOffset === 0 ? data.stories : [...prev, ...data.stories]));
+      setHasMore(data.hasMore);
+      setOffset(nextOffset + PAGE_SIZE);
     } finally {
       setLoading(false);
     }
   };
 
+  // initial load
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/user/read', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setHasActiveSub(Boolean(data?.hasActiveSub));
-          if (typeof data?.limit === 'number') setFreeLimit(data.limit);
-        }
-      } catch {
-        // ignore network errors; fallback defaults apply
-      }
-    })();
-    return () => { cancelled = true; };
+    if (firstLoadRef.current) return;
+    firstLoadRef.current = true;
+    fetchPage(0);
   }, []);
 
+  // how many can be shown without blur
+  const visibleFreeCount = useMemo(() => (isPro ? Number.POSITIVE_INFINITY : FREE_VISIBLE_LIMIT), [isPro]);
+
+  const handleLoadMore = () => {
+    // IMPORTANT: keep paging even if the next items will be locked
+    if (!loading && hasMore) fetchPage(offset);
+  };
+
+  const nothingYet = !loading && items.length === 0;
+
   return (
-    <>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {summaries.map((summary, idx) => {
-          const shouldLock = !hasActiveSub && idx >= freeLimit;
-          const storyWithLock = ('oneLiner' in summary)
-            ? ({ ...summary, locked: shouldLock } as SummaryItem)
-            : summary;
+    <div className="mx-auto max-w-4xl">
+      {/* Empty state */}
+      {nothingYet && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-600 shadow-sm">
+          <p className="font-medium">No stories found right now.</p>
+          <p className="mt-1 text-sm">Try again in a bit.</p>
+        </div>
+      )}
+
+      {/* List */}
+      <ul className="space-y-6">
+        {items.map((summary, idx) => {
+          const locked = !isPro && idx >= visibleFreeCount;
           return (
-            <div key={summary.id ?? idx} className="fade-in">
-              <StoryCard
-                story={storyWithLock}
-                isSaved={savedSet.has(summary.id)}
-                onSaved={handleSavedToggle}
-              />
-            </div>
+            <li key={summary.id}>
+              <StoryCard summary={summary} locked={locked} />
+            </li>
           );
         })}
-      </div>
 
-      <div className="mt-6 flex flex-col items-center">
-        {error ? (
-          <>
-            <p className="text-red-500 mb-2">{error}</p>
-            <button
-              onClick={loadMore}
-              disabled={loading}
-              className="px-4 py-2 bg-yellow-500 text-black rounded hover:bg-yellow-600 disabled:opacity-50"
-            >
-              {loading ? "Retrying..." : "Retry"}
-            </button>
-          </>
-        ) : hasMore ? (
+        {/* Loading skeletons */}
+        {loading &&
+          Array.from({ length: PAGE_SIZE }).map((_, i) => (
+            <li key={`skeleton-${i}`}>
+              <SkeletonCard />
+            </li>
+          ))}
+      </ul>
+
+      {/* Load more */}
+      {hasMore && (
+        <div className="mt-8 flex items-center justify-center">
           <button
-            onClick={loadMore}
+            onClick={handleLoadMore}
             disabled={loading}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading && (
-              <svg className="animate-spin h-5 w-5 mr-2 text-white" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                <path fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" className="opacity-75" />
-              </svg>
-            )}
-            <span>{loading ? "Loading..." : "Load more"}</span>
+            {loading ? 'Loading…' : 'Load more'}
           </button>
-        ) : (
-          <p className="text-gray-500">No more summaries</p>
-        )}
-      </div>
+        </div>
+      )}
 
-      <style jsx>{`
-        .fade-in { animation: fadein 0.5s ease-in-out; }
-        @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
-      `}</style>
-    </>
+      {/* Hint for free users */}
+      {!isPro && items.length >= visibleFreeCount && (
+        <p className="mt-4 text-center text-xs text-neutral-500">
+          You’ve reached your {FREE_VISIBLE_LIMIT} free summaries. Keep browsing—extra stories are blurred. Upgrade to see everything.
+        </p>
+      )}
+    </div>
   );
 }
