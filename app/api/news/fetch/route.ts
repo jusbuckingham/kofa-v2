@@ -65,7 +65,17 @@ async function extractOgImage(url: string): Promise<string | undefined> {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(url, { method: "GET", redirect: "follow", signal: controller.signal });
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      // Some publishers block non-browser UAs; present a friendly UA.
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 KofaBot/1.0",
+        "Accept": "text/html,application/xhtml+xml"
+      }
+    });
     clearTimeout(timer);
 
     const ctype = res.headers.get("content-type") || "";
@@ -95,12 +105,28 @@ function toISO(value?: string | Date): string | undefined {
   return typeof value === "string" ? value : value.toISOString();
 }
 
+async function mapInBatches<T, U>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<U>
+): Promise<U[]> {
+  const out: U[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map(fn));
+    out.push(...results);
+  }
+  return out;
+}
+
 // --- route -----------------------------------------------------------------
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("Authorization")?.split(" ")[1];
+  const isDev = process.env.NODE_ENV !== "production";
 
-  if (!secret || authHeader !== secret) {
+  // In production require the CRON secret; allow locally for DX
+  if (!isDev && (!secret || authHeader !== secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -236,46 +262,44 @@ export async function GET(request: Request) {
   }
 
   // Build summaries for each story (best‑effort fields)
-  const summaryOps: SummaryOp[] = await Promise.all(
-    normalized.map(async (s) => {
-      const body = s.raw?.content || s.raw?.description || s.raw?.snippet || s.raw?.excerpt || s.title;
+  const summaryOps: SummaryOp[] = await mapInBatches(normalized, 8, async (s) => {
+    const body = s.raw?.content || s.raw?.description || s.raw?.snippet || s.raw?.excerpt || s.title;
 
-      let oneLiner = "";
-      let bullets: string[] = ["", "", "", ""];
-      try {
-        const ai = await summarizeWithPerspective(body);
-        oneLiner = (ai.oneLiner || s.title).trim();
-        const raw = Array.isArray(ai.bullets) ? ai.bullets : [];
-        const normalizedBullets = raw.slice(0, 4);
-        while (normalizedBullets.length < 4) normalizedBullets.push("");
-        bullets = normalizedBullets.map((b) => clampBullet(b, 120));
-      } catch {
-        oneLiner = s.title;
-      }
+    let oneLiner = "";
+    let bullets: string[] = ["", "", "", ""];
+    try {
+      const ai = await summarizeWithPerspective(body);
+      oneLiner = (ai.oneLiner || s.title).trim();
+      const raw = Array.isArray(ai.bullets) ? ai.bullets : [];
+      const normalizedBullets = raw.slice(0, 4);
+      while (normalizedBullets.length < 4) normalizedBullets.push("");
+      bullets = normalizedBullets.map((b) => clampBullet(b, 120));
+    } catch {
+      oneLiner = s.title;
+    }
 
-      const sources = [{ title: s.title, url: s.url, domain: toDomain(s.url) }];
+    const sources = [{ title: s.title, url: s.url, domain: toDomain(s.url) }];
 
-      return {
-        updateOne: {
-          filter: { id: s.id },
-          update: {
-            $set: {
-              id: s.id,
-              title: s.title,
-              url: s.url,
-              source: s.source,
-              publishedAt: s.publishedAt,
-              imageUrl: s.imageUrl,
-              oneLiner,
-              bullets,
-              sources,
-            },
+    return {
+      updateOne: {
+        filter: { id: s.id },
+        update: {
+          $set: {
+            id: s.id,
+            title: s.title,
+            url: s.url,
+            source: s.source,
+            publishedAt: s.publishedAt,
+            imageUrl: s.imageUrl,
+            oneLiner,
+            bullets,
+            sources,
           },
-          upsert: true,
         },
-      } satisfies SummaryOp;
-    })
-  );
+        upsert: true,
+      },
+    } satisfies SummaryOp;
+  });
 
   // Upsert summaries in bulk (requires unique index on summaries.id)
   let upserted = 0;

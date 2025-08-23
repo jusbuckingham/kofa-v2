@@ -42,17 +42,32 @@ function StoryImage({ src, alt }: StoryImageProps) {
 }
 
 type StoryCardProps = {
-  // Accept any of these prop names for compatibility
-  story?: NewsStory | SummaryItem;
+  /**
+   * Preferred prop: provide the story/summary data here.
+   */
   summary?: NewsStory | SummaryItem;
+
+  /**
+   * @deprecated Use `summary` instead.
+   * Kept temporarily for backwards-compat with older usages.
+   */
+  story?: NewsStory | SummaryItem;
+
+  /**
+   * @deprecated Use `summary` instead.
+   * Kept temporarily for backwards-compat with older usages.
+   */
   item?: NewsStory | SummaryItem;
+
   isSaved?: boolean;
   onSaved?: (storyId: string) => void;
   locked?: boolean;
 };
 
+// Accept `summary` (preferred). `story` and `item` are deprecated shims.
 export default function StoryCard({ story: storyProp, summary, item, isSaved, onSaved, locked }: StoryCardProps) {
   const resolved = storyProp ?? summary ?? item;
+  // TODO: After callers migrate, make `summary` required and remove `story`/`item`.
 
   // Call hooks unconditionally (before any early returns)
   const titleId = useId();
@@ -62,7 +77,7 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
 
   if (!resolved) return null;
 
-  const story = resolved as NewsStory | SummaryItem;
+  const story: NewsStory | SummaryItem = resolved;
 
   const isLocked = typeof locked === 'boolean' ? locked : (isSummaryItem(story) ? Boolean(story.locked) : false);
 
@@ -109,9 +124,10 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
   const bullets = isSummaryItem(story)
     ? (() => {
         const arr = Array.isArray(story.bullets) ? story.bullets : [];
-        const four = arr.slice(0, 4);
-        while (four.length < 4) four.push("");
-        return four.map((b) => enforceLen(b));
+        return arr
+          .filter((b): b is string => Boolean(b && b.trim()))
+          .slice(0, 4)
+          .map((b) => enforceLen(b));
       })()
     : [];
 
@@ -137,6 +153,7 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
           <div className="mb-3 rounded-md border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/40 px-3 py-2">
             <span className="sr-only">Summary</span>
             <ul
+              aria-live="polite"
               className={`${
                 isLocked ? "blur-sm select-none pointer-events-none" : ""
               } list-none space-y-2 text-[0.97rem] leading-relaxed`}
@@ -199,7 +216,7 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
 
       {isLocked && (
         <>
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/5 pointer-events-none rounded-lg" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/5 pointer-events-none rounded-2xl" />
           <div className="absolute inset-x-0 bottom-0 p-3">
             <div className="rounded-md bg-white/90 dark:bg-zinc-900/80 backdrop-blur border text-center py-2">
               <span className="mr-2 text-sm">Upgrade to see all summaries</span>

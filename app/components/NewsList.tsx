@@ -27,10 +27,12 @@ export default function NewsList() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const firstLoadRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
 
   // fetch page
   const fetchPage = async (nextOffset: number) => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
@@ -42,11 +44,16 @@ export default function NewsList() {
         cache: 'no-store',
       });
       if (!res.ok) {
+        setError(`Failed to load stories (status ${res.status}).`);
         setLoading(false);
         return;
       }
       const data: GetResponse = await res.json();
-      setItems((prev) => (nextOffset === 0 ? data.stories : [...prev, ...data.stories]));
+      setItems((prev) => {
+        const merged = nextOffset === 0 ? data.stories : [...prev, ...data.stories];
+        const unique = Array.from(new Map(merged.map((s) => [s.id, s])).values());
+        return unique;
+      });
       setHasMore(data.hasMore);
       setOffset(nextOffset + PAGE_SIZE);
     } finally {
@@ -73,6 +80,11 @@ export default function NewsList() {
 
   return (
     <div className="mx-auto max-w-4xl">
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
       {/* Empty state */}
       {nothingYet && (
         <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-neutral-600 shadow-sm">

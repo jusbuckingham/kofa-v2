@@ -1,13 +1,8 @@
 import clientPromise from "@/lib/mongodb";
+import { FREE_DAILY_STORY_LIMIT } from "@/lib/constants";
 
-// Number of free summaries per day for non-subscribers
-// Prefer FREE_SUMMARIES_PER_DAY; fall back to old FREE_READS_PER_DAY for compatibility
-const _rawFreeLimit = process.env.FREE_SUMMARIES_PER_DAY ?? process.env.FREE_READS_PER_DAY;
-const _parsedFreeLimit = Number(_rawFreeLimit);
-export const FREE_SUMMARIES_PER_DAY = Number.isFinite(_parsedFreeLimit) ? _parsedFreeLimit : 3;
-if (process.env.NODE_ENV === "development" && _rawFreeLimit !== undefined && !Number.isFinite(_parsedFreeLimit)) {
-  console.warn("[quota] Invalid FREE_SUMMARIES_PER_DAY='" + _rawFreeLimit + "' — defaulting to 3");
-}
+// Canonical limit comes from centralized constants
+export const FREE_SUMMARIES_PER_DAY = FREE_DAILY_STORY_LIMIT;
 
 export interface QuotaResult {
   // New canonical fields
@@ -44,7 +39,7 @@ function startOfUTCday(d: Date = new Date()): number {
 
 async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Promise<QuotaResult> {
   const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
+  const db = client.db(process.env.MONGODB_DB || process.env.MONGODB_DB_NAME || "kofa");
   const coll = db.collection<UserMetaDoc>("user_metadata");
 
   const keyEmail = email.trim().toLowerCase();

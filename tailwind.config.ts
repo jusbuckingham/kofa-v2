@@ -1,25 +1,25 @@
-import type { Config } from 'tailwindcss';
+import type { Config } from "tailwindcss";
+import forms from "@tailwindcss/forms";
+import typography from "@tailwindcss/typography";
 
 const config: Config = {
   content: [
-    './app/**/*.{js,ts,jsx,tsx}',
-    './components/**/*.{js,ts,jsx,tsx}',
-    './pages/**/*.{js,ts,jsx,tsx}', // optional if you're using only the app router
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
-      animation: {
-        marquee: 'marquee 30s linear infinite',
-      },
-      keyframes: {
-        marquee: {
-          '0%': { transform: 'translateX(100%)' },
-          '100%': { transform: 'translateX(-100%)' },
+      colors: {
+        brand: {
+          DEFAULT: "#7C3AED", // example brand color (purple-600)
+          light: "#A78BFA",
+          dark: "#5B21B6",
         },
       },
     },
   },
-  plugins: [],
+  plugins: [forms, typography],
 };
 
 export default config;

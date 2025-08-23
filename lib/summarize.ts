@@ -20,24 +20,33 @@ export default async function summarizeWithPerspective(
   const messages: Array<{ role: "system" | "user"; content: string }> = [
     {
       role: "system",
-      content: `Extract a concise news summary as strict JSON. Return ONLY a JSON object with keys: oneLiner, bullets.
-Style:
-- Speak as Kofa, a trusted guide for Black readers, delivering clear, conversational "need to know" insights.
-- Frame context explicitly from a Black perspective: history, systemic patterns, equity, community impact, and accountability.
-- Write as Kofa’s own briefing. Do NOT reference an article, outlet, or author. No “according to,” “the article,” or “reports say.”
-- Talk directly and personally to the reader with warmth and clarity.
-- Avoid stereotypes or tokenizing; uplift authentic community voices and lived experience.
-- Maintain a grounded, respectful tone—no slang, hashtags, or emojis.
-Formatting:
-- \`bullets\` MUST be an array with EXACTLY 4 strings—each should stand alone and read like a takeaway.
-- Bullets may include multiple short sentences (tweet-like); keep the total per bullet ≤ 120 characters.
-- Each line must stand alone as the source for the reader; never point to another source.
-- No labels like "Who:"—just the content of each point.
-- Each bullet MUST be ≤ 120 characters (aim for ~90–120).
-Notes:
-- If the Black community context is not genuinely relevant, keep the bullet neutral and factual.
-- Prioritize clarity, dignity, and usefulness to Black readers.
-- Avoid source attributions, outlet names, and quotation marks unless truly essential identifiers (e.g., a person/place). Rewrite attributions as plain facts.`,
+      content: `Extract a concise news summary as STRICT JSON. Return ONLY:
+{
+  "oneLiner": string,
+  "bullets": string[4]
+}
+
+Voice & audience:
+- Speak as Kofa, a trusted guide for Black readers.
+- Be clear, calm, and useful; respectful and grounded.
+- Add Black community framing (history, systems, equity, impact) only if it truly adds clarity.
+
+Do NOT:
+- Reference articles, outlets, authors, or “reports say,” “according to,” etc.
+- Use hashtags, emojis, or filler (“In summary,” “Overall,” “This article…”).
+- Use quotes unless the name itself needs them (avoid scare quotes).
+- Address the model (“As an AI…”) or include reasoning.
+
+Format rules:
+- "bullets" MUST be exactly 4 strings. Each stands alone like a tweet.
+- Each bullet ≤ 120 characters total; prefer 90–120. Multiple short sentences allowed.
+- No labels like “Who/What/When/Why”; just the takeaway lines.
+- Each line must read as the source itself (no attribution language).
+
+Priorities:
+- Clarity and dignity first. Avoid stereotypes or tokenizing.
+- If specific Black context isn’t relevant, keep the point neutral and factual.
+`,
     },
     {
       role: "user",
@@ -47,13 +56,28 @@ ${text}`,
     },
   ];
 
+  // Remove hashtags, emojis (via surrogate-pair sweep), and stray quotes
+  function stripNoisyMarks(str: string): string {
+    if (!str) return "";
+    let out = str;
+    // remove hashtags (wordy and trailing)
+    out = out.replace(/(^|\s)#[a-z0-9_]+/gi, " ");
+    // remove most emoji via surrogate-pair sweep
+    out = out.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "");
+    // remove common quotes
+    out = out.replace(/[“”"‘’']/g, "");
+    return out;
+  }
+
   // Remove external attributions so bullets read as Kofa's own briefing
   function deAttribute(str: string): string {
-    const s = str
-      // strip leading quotes
-      .replace(/^["'“”]+/, "")
-      // common attribution starters
-      .replace(/^(?:according to|reports? (?:say|from)|news outlets?|media reports?|sources? say|the (?:article|story|report))\b[:,]?\s*/i, "")
+    const s = stripNoisyMarks(str)
+      // strip leading quotes/spaces
+      .replace(/^[\s"'“”‘’]+/, "")
+      // common attribution/openers
+      .replace(/^(?:according to|report(?:s)? (?:say|from)|news outlets?|media reports?|sources? say|the (?:article|story|report)|as reported|via)\b[:,]?\s*/i, "")
+      // remove "outlet says/claims/notes"
+      .replace(/\b(?:says|said|claims?|notes?|reports?)\s*[:,]?\s*$/i, "")
       // collapse multiple spaces
       .replace(/\s+/g, " ");
     return s.trim();
@@ -64,9 +88,9 @@ ${text}`,
     if (!str) return "";
     // normalize whitespace
     const clean = deAttribute(str).replace(/\s+/g, " ").trim();
-    if (clean.length <= max) return clean;
-
-    const slice = clean.slice(0, max - 1);
+    const cleanSafe = stripNoisyMarks(clean).replace(/\s+/g, " ").trim();
+    if (cleanSafe.length <= max) return cleanSafe;
+    const slice = cleanSafe.slice(0, max - 1);
     // try to cut on a word boundary
     const cutAt = slice.lastIndexOf(" ");
     let base = cutAt > 40 ? slice.slice(0, cutAt) : slice; // don't over-trim short lines
@@ -83,7 +107,9 @@ ${text}`,
       ? Object.values(input as Record<string, unknown>)
       : [];
     const onlyStrings = arr.filter((v): v is string => typeof v === "string");
-    const trimmed = onlyStrings.map((s) => enforce(deAttribute(s), max)).filter((s) => s.length > 0);
+    const trimmed = onlyStrings
+      .map((s) => enforce(stripNoisyMarks(deAttribute(s)), max))
+      .filter((s) => s.length > 0);
     // Ensure exactly 4 entries: slice if too long, pad with empty strings if too short
     const four = trimmed.slice(0, 4);
     while (four.length < 4) four.push("");
@@ -113,16 +139,19 @@ ${text}`,
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      temperature: 0.35,
+      temperature: 0.2,
+      top_p: 0.9,
       response_format: { type: "json_object" },
-      max_tokens: 320,
+      max_tokens: 280,
     });
     const raw = response.choices[0].message.content ?? "";
     const parsed = parseJsonLoose(raw);
     const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
     const bullets = normalizeBullets(safe.bullets);
+    while (bullets.length < 4) bullets.push("");
+    if (bullets.length > 4) bullets.splice(4);
     return {
-      oneLiner: enforce(safe.oneLiner ? deAttribute(safe.oneLiner) : undefined),
+      oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
       bullets,
     };
   } catch (error: unknown) {
@@ -132,16 +161,19 @@ ${text}`,
       const fallback = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages,
-        temperature: 0.35,
+        temperature: 0.2,
+        top_p: 0.9,
         response_format: { type: "json_object" },
-        max_tokens: 320,
+        max_tokens: 280,
       });
       const raw = fallback.choices[0].message.content ?? "";
       const parsed = parseJsonLoose(raw);
       const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
       const bullets = normalizeBullets(safe.bullets);
+      while (bullets.length < 4) bullets.push("");
+      if (bullets.length > 4) bullets.splice(4);
       return {
-        oneLiner: enforce(safe.oneLiner ? deAttribute(safe.oneLiner) : undefined),
+        oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
         bullets,
       };
     }

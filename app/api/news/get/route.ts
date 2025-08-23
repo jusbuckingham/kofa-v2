@@ -4,11 +4,25 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse, NextRequest } from "next/server";
-import clientPromise from "@/lib/mongodb";
+import { clientPromise } from "@/lib/mongoClient";
 import type { Filter, Document } from "mongodb";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { peekSummaryQuota } from "@/lib/quota";
+
+type SummaryDoc = {
+  _id: { toString(): string };
+  id?: string;
+  title: string;
+  url?: string;
+  imageUrl?: string;
+  source?: string;
+  publishedAt?: Date | string;
+  oneLiner?: string;
+  bullets?: unknown;
+  colorNote?: string;
+  sources?: unknown;
+};
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -107,12 +121,25 @@ export async function GET(req: NextRequest) {
 
   const total = await col.countDocuments(filter);
   // fetch raw documents matching filters
-  const docs = await col
-    .find(filter)
+  const docs = (await col
+    .find<SummaryDoc>(filter, {
+      projection: {
+        id: 1,
+        title: 1,
+        url: 1,
+        imageUrl: 1,
+        source: 1,
+        publishedAt: 1,
+        oneLiner: 1,
+        bullets: 1,
+        colorNote: 1,
+        sources: 1,
+      },
+    })
     .sort(sort)
     .skip(offset)
     .limit(limit)
-    .toArray();
+    .toArray()) as SummaryDoc[];
 
   const session = await getServerSession(authOptions);
   const email = session?.user?.email;
@@ -133,7 +160,23 @@ export async function GET(req: NextRequest) {
         ? doc.publishedAt
         : null;
 
-    const resolvedSources = Array.isArray(doc.sources) ? doc.sources : [];
+    const bulletsArr = Array.isArray(doc.bullets)
+      ? (doc.bullets as unknown[]).map((b) => String(b)).filter(Boolean)
+      : [];
+
+    const resolvedSources = Array.isArray(doc.sources)
+      ? (doc.sources as unknown[]).map((s) => {
+          if (s && typeof s === "object") {
+            const o = s as Record<string, unknown>;
+            return {
+              title: String(o.title ?? ""),
+              domain: String(o.domain ?? ""),
+              url: String(o.url ?? ""),
+            };
+          }
+          return { title: String(s ?? ""), domain: "", url: "" };
+        })
+      : [];
 
     return {
       id: doc.id || doc._id.toString(),
@@ -143,7 +186,7 @@ export async function GET(req: NextRequest) {
       source: doc.source ?? toDomain(doc.url || undefined) ?? "",
       publishedAt: pubISO ?? new Date().toISOString(),
       oneLiner: doc.oneLiner,
-      bullets: doc.bullets,
+      bullets: bulletsArr,
       colorNote: doc.colorNote,
       sources: resolvedSources,
       locked,

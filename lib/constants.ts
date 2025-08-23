@@ -5,10 +5,14 @@
 export type SubscriptionStatus = "active" | "trialing" | "canceled" | "none";
 
 // Number of free story summary reads per (UTC) day for non‑subscribed users.
-export const FREE_DAILY_STORY_LIMIT =
-  Number.isFinite(Number(process.env.FREE_DAILY_LIMIT))
-    ? Number(process.env.FREE_DAILY_LIMIT)
-    : 3;
+const rawLimit =
+  process.env.NEXT_PUBLIC_FREE_DAILY_LIMIT ??
+  process.env.FREE_DAILY_LIMIT ??
+  "7";
+
+export const FREE_DAILY_STORY_LIMIT = Number.isFinite(Number(rawLimit))
+  ? Number(rawLimit)
+  : 7;
 
 // Statuses that should be treated as “paid / unlimited”.
 export const SUBSCRIPTION_ACTIVE_STATUSES: readonly SubscriptionStatus[] = ["active", "trialing"] as const;
@@ -25,8 +29,8 @@ export function todayUTC(): Date {
 }
 
 /** True if the given status represents an active, paying (or trialing) customer. */
-export const isActiveSub = (status?: SubscriptionStatus | string): boolean =>
-  SUBSCRIPTION_ACTIVE_STATUSES.includes(((status as SubscriptionStatus) ?? "none"));
+export const isActiveSub = (status?: string): boolean =>
+  status === "active" || status === "trialing";
 
 /** True if a non‑subscribed user has already hit the free daily limit. */
 export const isOverFreeLimit = (count: number, status?: SubscriptionStatus | string): boolean =>

@@ -10,10 +10,10 @@ function Placeholder({ className }: { className: string }) {
 }
 
 // Declarative layout config (stable keys, no arrays created in render)
-const BULLET_COUNT = 5;
+const BULLET_COUNT = 4;
 const SKELETON_BLOCKS: Array<{ key: string; className: string }> = [
   { key: "image", className: "w-full h-40" },
-  { key: "one-liner", className: "h-6 w-3/4" },
+  { key: "title", className: "h-6 w-3/4" },
   ...Array.from({ length: BULLET_COUNT }, (_, i) => ({
     key: `bullet-${i}`,
     className: "h-4 w-5/6",

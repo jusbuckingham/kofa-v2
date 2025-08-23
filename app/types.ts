@@ -1,13 +1,13 @@
 export interface NewsStory {
   id: string;
   title: string;
-  url?: string;
-  summary?: string;
-  description?: string;
-  source?: string;
-  category?: string;
+  url: string;           // now required to align with API shape
+  source: string;        // now required
+  publishedAt: string;   // now required (ISO string)
   imageUrl?: string;
-  publishedAt?: string;
+  summary?: string;      // optional short AI-gen summary (keep for future use)
+  description?: string;  // optional longer description
+  category?: string;     // optional taxonomy tag
 }
 
 export type FiveWs = {
@@ -29,11 +29,11 @@ export interface SummaryItem {
   title: string;
   url: string;
   source: string;
-  publishedAt: string;
+  publishedAt: string;   // ISO string
   imageUrl?: string;
   oneLiner: string;
   bullets: string[];
-  colorNote: string;
   sources: SourceRef[];
-  locked?: boolean; // for free vs. pro gating
+  colorNote?: string;    // made optional since not always present in payload
+  locked?: boolean;      // for free vs. pro gating
 }

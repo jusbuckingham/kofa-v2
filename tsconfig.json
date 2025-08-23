@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "ES2022",
     "lib": [
       "dom",
       "dom.iterable",
@@ -18,8 +18,14 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
+      "@/*": ["*"],
+      "@/app/*": ["app/*"],
+      "@/app": ["app"],
+      "@/app/types": ["app/types"],
+      "@/app/types/*": ["app/types/*"],
       "@/components/*": ["app/components/*"],
       "@/lib/*": ["lib/*"],
       "@/types/*": ["app/types/*"],

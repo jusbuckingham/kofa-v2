@@ -43,6 +43,10 @@ Kofa delivers concise, AI-generated article summaries that highlight Black socia
    STRIPE_PRICE_ID=price_...
    STRIPE_WEBHOOK_SECRET=whsec_...
 
+   # News APIs
+   GNEWS_API_KEY=your-gnews-api-key
+   NEWSDATA_API_KEY=your-newsdata-api-key
+
    # Public
    NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
@@ -62,7 +66,7 @@ Kofa delivers concise, AI-generated article summaries that highlight Black socia
 
 ## 🚀 Core Features
 
-- **News Ingestion:** Fetch multiple RSS feeds, summarize with OpenAI, and store results in MongoDB.
+- **News Ingestion:** Fetch news articles using external APIs like GNews and NewsData, summarize with OpenAI, and store results in MongoDB.
 - **Black-Conscious Summaries:** AI-generated 3-point bullet summaries emphasizing historical context and community impact.
 - **Metered Paywall:** 3 free reads per day for non-subscribers; unlimited access for subscribers.
 - **Authentication:** Email magic link via NextAuth, with optional demo login in development.
@@ -80,6 +84,7 @@ Kofa delivers concise, AI-generated article summaries that highlight Black socia
 - **NextAuth v4** (Email provider)
 - **Stripe** (Checkout and Webhooks)
 - **OpenAI Node.js SDK**
+- **GNews / NewsData API** (News ingestion)
 - **Tailwind CSS**
 - **Vercel** (Hosting and Cron Jobs)
 
@@ -109,7 +114,7 @@ README.md
 
 ## 🛠️ Cron & Manual Fetch
 
-- **Vercel Cron Jobs:** Configure in your Vercel project settings to call `/api/news/fetch` daily.
+- **Vercel Cron Jobs:** Configure in your Vercel project settings to call `/api/news/fetch` daily. The ingestion now relies on API keys for GNews and NewsData rather than RSS feeds.
 - **Manual Trigger:**
   ```bash
   export CRON_SECRET=your_cron_secret
