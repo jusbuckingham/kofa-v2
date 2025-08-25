@@ -1,6 +1,19 @@
 // lib/summarize.ts
 import OpenAI from "openai";
 
+// Models can be tuned via env without code changes
+const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "gpt-4o";
+const SUMMARY_FALLBACK_MODEL = process.env.SUMMARY_FALLBACK_MODEL || "gpt-4o-mini";
+
+// Basic promise timeout utility (ms)
+function withTimeout<T>(p: Promise<T>, ms = 45000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`openai: timeout after ${ms}ms`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); })
+     .catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 interface SummarizeResponse {
   oneLiner?: string;
   bullets?: unknown; // expect string[] but be liberal in parser
@@ -16,6 +29,12 @@ const openai = new OpenAI({ apiKey });
 export default async function summarizeWithPerspective(
   text: string
 ): Promise<{ oneLiner: string; bullets: string[] }> {
+  if (!text || !text.trim()) {
+    return { oneLiner: "", bullets: ["", "", "", ""] };
+  }
+
+  const scrub = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+
   // Structured 4 bullets, JSON output
   const messages: Array<{ role: "system" | "user"; content: string }> = [
     {
@@ -52,7 +71,7 @@ Priorities:
       role: "user",
       content: `Summarize this article text:
 
-${text}`,
+${scrub(text)}`,
     },
   ];
 
@@ -135,48 +154,46 @@ ${text}`,
     }
   }
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
-      temperature: 0.2,
-      top_p: 0.9,
-      response_format: { type: "json_object" },
-      max_tokens: 280,
-    });
-    const raw = response.choices[0].message.content ?? "";
-    const parsed = parseJsonLoose(raw);
-    const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
-    const bullets = normalizeBullets(safe.bullets);
-    while (bullets.length < 4) bullets.push("");
-    if (bullets.length > 4) bullets.splice(4);
-    return {
-      oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
-      bullets,
-    };
-  } catch (error: unknown) {
-    // Check for insufficient_quota on error.cause
-    const code = (error as { cause?: { code?: unknown } } | undefined)?.cause?.code;
-    if (code === "insufficient_quota") {
-      const fallback = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+  async function completeOnce(model: string) {
+    return withTimeout(
+      openai.chat.completions.create({
+        model,
         messages,
         temperature: 0.2,
         top_p: 0.9,
         response_format: { type: "json_object" },
-        max_tokens: 280,
-      });
-      const raw = fallback.choices[0].message.content ?? "";
-      const parsed = parseJsonLoose(raw);
-      const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
-      const bullets = normalizeBullets(safe.bullets);
-      while (bullets.length < 4) bullets.push("");
-      if (bullets.length > 4) bullets.splice(4);
-      return {
-        oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
-        bullets,
-      };
-    }
-    throw error;
+        max_tokens: 320,
+      }),
+      45000
+    );
   }
+
+  let response;
+  try {
+    response = await completeOnce(SUMMARY_MODEL);
+  } catch (e: unknown) {
+    const msg = (e as { message?: string })?.message || "";
+    const status = (e as { status?: number })?.status;
+    // quick retry on rate limit, then fall back
+    if (status === 429 || /rate limit/i.test(msg)) {
+      try {
+        response = await completeOnce(SUMMARY_MODEL);
+      } catch {
+        response = await completeOnce(SUMMARY_FALLBACK_MODEL);
+      }
+    } else {
+      // non-rate errors fall back once
+      response = await completeOnce(SUMMARY_FALLBACK_MODEL);
+    }
+  }
+  const raw = response.choices[0].message.content ?? "";
+  const parsed = parseJsonLoose(raw);
+  const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
+  const bullets = normalizeBullets(safe.bullets);
+  while (bullets.length < 4) bullets.push("");
+  if (bullets.length > 4) bullets.splice(4);
+  return {
+    oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
+    bullets,
+  };
 }

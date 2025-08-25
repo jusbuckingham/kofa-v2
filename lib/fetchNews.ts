@@ -53,6 +53,140 @@ function enforceLen(input: unknown, max = 120): string {
   return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
 }
 
+// ---------- Filtering (domains, junk, freshness) ----------
+const BLOCKED_DOMAINS = new Set(
+  [
+    // PR wires / advertorial-heavy
+    "prnewswire.com",
+    "businesswire.com",
+    "globenewswire.com",
+    "newswire.com",
+    "investing.com",
+    "marketwatch.com",
+    "benzinga.com",
+    "finance.yahoo.com",
+    // low-signal clickbait or coupon/deals
+    "dealnews.com",
+    "slickdeals.net",
+  ].map((d) => d.toLowerCase())
+);
+
+const JUNK_PATTERNS: RegExp[] = [
+  /\b(sponsored|sponsored content|advertorial)\b/i,
+  /\b(promo|deal|discount|sale|coupon|giveaway|sweepstake)\b/i,
+  /\bbetting|odds|sportsbook|casino\b/i,
+  /\bhoroscope\b/i,
+];
+
+function isRecent(iso?: string | Date, hours = 72): boolean {
+  const d = iso ? new Date(iso) : new Date(0);
+  return Date.now() - d.getTime() <= hours * 3600_000;
+}
+
+function looksJunk(title?: string, description?: string): boolean {
+  const s = `${title || ""} ${description || ""}`;
+  return JUNK_PATTERNS.some((rx) => rx.test(s));
+}
+
+// ---------- Lens scoring (trusted outlets + Black-news boost) ----------
+const TRUSTED_DOMAINS = new Set(
+  [
+    "nytimes.com",
+    "washingtonpost.com",
+    "reuters.com",
+    "apnews.com",
+    "npr.org",
+    "bbc.com",
+    "theguardian.com",
+    "latimes.com",
+    "bloomberg.com",
+    "wsj.com",
+    "politico.com",
+    "axios.com",
+    "aljazeera.com",
+    "propublica.org",
+    "pbs.org",
+    "time.com",
+    "usatoday.com",
+    "abcnews.go.com",
+    "nbcnews.com",
+    "cbsnews.com",
+    "cnn.com",
+  ].map((d) => d.toLowerCase())
+);
+
+const BLACK_PUBLISHER_DOMAINS = new Set(
+  [
+    "thegrio.com",
+    "theroot.com",
+    "capitalbnews.org",
+    "blavity.com",
+    "essence.com",
+    "andscape.com",
+    "lasentinel.net",
+    "amsterdamnews.com",
+    "afro.com",
+    "defendernetwork.com",
+    "blackenterprise.com",
+    "thecharlottepost.com",
+    "theatlantavoice.com",
+    "washingtoninformer.com",
+  ].map((d) => d.toLowerCase())
+);
+
+const BLACK_PATTERNS: RegExp[] = [
+  /\bblack\b/i,
+  /\bafrican[- ]american(s)?\b/i,
+  /\bcivil rights?\b/i,
+  /\bvoting rights?\b/i,
+  /\bnaacp\b/i,
+  /\bhbcu(s)?\b/i,
+  /\bpolice(\b|[- ]?brutality)\b/i,
+  /\bpolicing\b/i,
+  /\bdisparities?\b/i,
+  /\b(redlining|mass incarceration|environmental justice)\b/i,
+  /\bjuneteenth\b/i,
+  /\b(black lives matter|blm)\b/i,
+  /\b(lynching|racial profiling|racial justice)\b/i,
+];
+
+function countMatches(rxList: RegExp[], title?: string, body?: string): number {
+  const s = `${title || ""} ${body || ""}`;
+  let hits = 0;
+  for (const rx of rxList) {
+    if (rx.test(s)) hits += 1;
+  }
+  return hits;
+}
+
+function scoreStoryForLens(
+  title: string,
+  body: string,
+  domain: string,
+  lens: "top" | "black"
+): { score: number; blackHits: number } {
+  let score = 0;
+  if (domain && TRUSTED_DOMAINS.has(domain)) score += 3; // trust boost
+
+  // Boost for Black-focused publishers (higher when lens === "black")
+  const blackBoostBase = Number(process.env.NEWS_BLACK_DOMAIN_BOOST || 2);
+  if (domain && BLACK_PUBLISHER_DOMAINS.has(domain)) {
+    score += (lens === "black" ? blackBoostBase * 2 : blackBoostBase);
+  }
+
+  if (/\b(breaking|live|update|exclusive)\b/i.test(title)) score += 1; // newsiness
+  if (/\b(opinion|op\-ed|editorial)\b/i.test(title)) score -= 2; // de-emphasize opinion
+
+  const blackHits = countMatches(BLACK_PATTERNS, title, body);
+  if (lens === "black" && blackHits) score += Math.min(blackHits, 3) * 2; // cap boost
+
+  const len = body.trim().length;
+  if (len > 400) score += 1;
+  if (len > 1200) score += 1;
+
+  return { score, blackHits };
+}
+
 // ---------- Types saved to Mongo ----------
 export interface StoryDoc {
   title: string;
@@ -143,15 +277,67 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     return { inserted: 0, stories: [] };
   }
 
+  // Filter out junk/PR domains, sponsored/ads, and stale items (older than 72h)
+  const filteredCandidates = candidates.filter((c) => {
+    const domain = getDomain(c.url).toLowerCase();
+    if (!c.url || !domain) return false;
+    if (BLOCKED_DOMAINS.has(domain)) return false;
+    if (looksJunk(c.title, c.description)) return false;
+    // If publishedAt present, enforce freshness; if missing, allow
+    return !c.publishedAt || isRecent(c.publishedAt, 72);
+  });
+
+  if (filteredCandidates.length === 0) {
+    return { inserted: 0, stories: [] };
+  }
+
+  // Lens tuning to match API route (env-driven)
+  const lensEnv = (process.env.NEWS_LENS || "top").toLowerCase();
+  const lens: "top" | "black" = lensEnv === "black" ? "black" : "top";
+  const minScoreEnv = Number(process.env.NEWS_MIN_SCORE || "");
+  const minScore = Number.isFinite(minScoreEnv) ? minScoreEnv : undefined;
+  const allowlistOnly = process.env.NEWS_ALLOWLIST_ONLY === "1";
+
+  let scored = filteredCandidates.map((c) => {
+    const domain = getDomain(c.url).toLowerCase();
+    const { score, blackHits } = scoreStoryForLens(c.title || "", c.description || "", domain, lens);
+    return { ...c, __score: score, __blackHits: blackHits, __domain: domain } as typeof c & {
+      __score: number; __blackHits: number; __domain: string;
+    };
+  });
+
+  if (lens === "black") {
+    scored = scored.filter((c) => c.__blackHits > 0);
+  }
+  if (typeof minScore === "number") {
+    scored = scored.filter((c) => c.__score >= minScore);
+  }
+  if (allowlistOnly) {
+    scored = scored.filter((c) => TRUSTED_DOMAINS.has(c.__domain));
+  }
+
+  scored.sort((a, b) => b.__score - a.__score);
+
+  // Soft cap to protect token spend
+  const MAX_TO_SUMMARIZE = Number(process.env.MAX_TO_SUMMARIZE || 40);
+  const worklist = scored.slice(0, Math.max(1, Math.min(200, MAX_TO_SUMMARIZE)));
+
   // De-dupe against DB and summarize
   const toInsert: StoryDoc[] = [];
-  for (const c of candidates) {
+  for (const c of worklist) {
     // Skip if already ingested
     const exists = await storiesCol.findOne({ url: c.url });
     if (exists) continue;
 
     const textToSummarize = `${c.title ?? ""}\n\n${c.description ?? ""}`.trim();
-    const s = await summarizeWithPerspective(textToSummarize);
+
+    let s: { oneLiner?: string; bullets?: string[] } = {};
+    try {
+      s = await summarizeWithPerspective(textToSummarize);
+    } catch {
+      // Skip items that fail to summarize
+      continue;
+    }
 
     const summary = {
       oneLiner: enforceLen(s.oneLiner),

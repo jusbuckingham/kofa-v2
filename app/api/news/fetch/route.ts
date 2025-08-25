@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 // app/api/news/fetch/route.ts
 import { NextResponse } from "next/server";
 import fetchNewsFromSource from "@/lib/fetchNews";
@@ -119,15 +120,143 @@ async function mapInBatches<T, U>(
   return out;
 }
 
+// --- relevance & junk filtering --------------------------------------------
+const BLOCKED_DOMAINS = new Set(
+  [
+    // PR wires / advertorial-heavy
+    "prnewswire.com",
+    "businesswire.com",
+    "globenewswire.com",
+    "newswire.com",
+    "investing.com",
+    "marketwatch.com",
+    "benzinga.com",
+    "finance.yahoo.com",
+    // low-signal clickbait or coupon/deals
+    "dealnews.com",
+    "slickdeals.net",
+  ].map((d) => d.toLowerCase())
+);
+
+
+const JUNK_PATTERNS: RegExp[] = [
+  /\b(sponsored|sponsored content|advertorial)\b/i,
+  /\b(promo|deal|discount|sale|coupon|giveaway|sweepstake)\b/i,
+  /\bbetting|odds|sportsbook|casino\b/i,
+  /\bhoroscope\b/i,
+];
+
+function isRecent(iso?: string | Date, hours = 72): boolean {
+  const d = iso ? new Date(iso) : new Date(0);
+  return Date.now() - d.getTime() <= hours * 3600_000;
+}
+
+function looksJunk(title?: string, description?: string): boolean {
+  const s = `${title || ""} ${description || ""}`;
+  return JUNK_PATTERNS.some((rx) => rx.test(s));
+}
+
+// --- tuning for "top" and "black" lenses ----------------------------------
+const TRUSTED_DOMAINS = new Set(
+  [
+    "nytimes.com",
+    "washingtonpost.com",
+    "reuters.com",
+    "apnews.com",
+    "npr.org",
+    "bbc.com",
+    "theguardian.com",
+    "latimes.com",
+    "bloomberg.com",
+    "wsj.com",
+    "politico.com",
+    "axios.com",
+    "aljazeera.com",
+    "propublica.org",
+    "pbs.org",
+    "time.com",
+    "usatoday.com",
+    "abcnews.go.com",
+    "nbcnews.com",
+    "cbsnews.com",
+    "cnn.com",
+  ].map((d) => d.toLowerCase())
+);
+
+// Terms that frequently indicate Black news / civil-rights relevance
+const BLACK_PATTERNS: RegExp[] = [
+  /\bblack\b/i,
+  /\bafrican[- ]american(s)?\b/i,
+  /\bcivil rights?\b/i,
+  /\bvoting rights?\b/i,
+  /\bnaacp\b/i,
+  /\bhbcu(s)?\b/i,
+  /\bpolice(\b|[- ]?brutality)\b/i,
+  /\bpolicing\b/i,
+  /\bdisparities?\b/i,
+  /\b(redlining|mass incarceration|environmental justice)\b/i,
+  /\bjuneteenth\b/i,
+  /\b(black lives matter|blm)\b/i,
+  /\b(lynching|racial profiling|racial justice)\b/i,
+];
+
+function countMatches(rxList: RegExp[], title?: string, body?: string): number {
+  const s = `${title || ""} ${body || ""}`;
+  let hits = 0;
+  for (const rx of rxList) {
+    if (rx.test(s)) hits += 1;
+  }
+  return hits;
+}
+
+function scoreStoryForLens(
+  s: IngestStory,
+  _lens: "top" | "black"
+): { score: number; blackHits: number; domain: string } {
+  const url = s.url || s.link || "";
+  const domain = toDomain(url).toLowerCase();
+  const title = s.title || s.headline || "";
+  const body = s.content || s.description || s.snippet || s.excerpt || "";
+
+  let score = 0;
+
+  // Trust signals
+  if (domain && TRUSTED_DOMAINS.has(domain)) score += 3;
+
+  // Topical/recency cues in the headline
+  if (/\b(breaking|live|update|exclusive)\b/i.test(title)) score += 1;
+
+  // Penalize obvious non-news commentary in headline
+  if (/\b(opinion|op\-ed|editorial)\b/i.test(title)) score -= 2;
+
+  // Black-lens signal (only boost when lens === "black")
+  const blackHits = countMatches(BLACK_PATTERNS, title, body);
+  if (_lens === "black" && blackHits) score += Math.min(blackHits, 3) * 2; // cap boost
+
+  // Slight boost for longer body (more substance), capped
+  const len = body.trim().length;
+  if (len > 400) score += 1;
+  if (len > 1200) score += 1;
+
+  return { score, blackHits, domain };
+}
+
 // --- route -----------------------------------------------------------------
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("Authorization")?.split(" ")[1];
   const isDev = process.env.NODE_ENV !== "production";
 
-  // In production require the CRON secret; allow locally for DX
-  if (!isDev && (!secret || authHeader !== secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // NEW: allow scheduled Vercel Cron calls in production via headers
+  const vercelCronHeader =
+    request.headers.get("x-vercel-cron") || request.headers.get("x-vercel-schedule");
+
+  // In production, accept either the Vercel Cron header or the shared secret
+  if (!isDev && !vercelCronHeader && (!secret || authHeader !== secret)) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   // Parse optional query parameters for filtering and control
@@ -141,6 +270,11 @@ export async function GET(request: Request) {
   const limitNum = limitParam ? Math.max(1, Math.min(1000, Number(limitParam) || 0)) : undefined; // hard cap
   const dryRun = sp.get("dryRun") === "1" || sp.get("dry") === "1"; // if true, do not write to DB
   const includeMeta = sp.get("meta") === "1"; // attach summary meta in response
+
+  const focusParam = (sp.get("focus") || sp.get("lens") || "top").toLowerCase();
+  const focus: "top" | "black" = focusParam === "black" ? "black" : "top";
+  const minScoreParam = Number(sp.get("minScore") || "");
+  const minScore = Number.isFinite(minScoreParam) ? minScoreParam : undefined;
 
   const wantedSources = sourceParam
     ? sourceParam
@@ -181,16 +315,47 @@ export async function GET(request: Request) {
   // Apply in-memory filters to fetched items
   let filtered: IngestStory[] = fetchedRaw.filter((s) => {
     const url = s.url || s.link || "";
-    const domain = (s.source || toDomain(url)).toLowerCase();
+    const domainFull = toDomain(url);
+    const domain = (s.source || domainFull).toLowerCase();
     const pub = s.publishedAt ?? s.pubDate;
     const title = s.title || s.headline || "";
     const body = s.content || s.description || s.snippet || s.excerpt || "";
 
-    const sourceOk = !wantedSources || wantedSources.some((ws) => domain.includes(ws) || url.toLowerCase().includes(ws));
-    const timeOk = withinRange(pub as string | Date);
+    // Block known junk/PR domains
+    if (domainFull && BLOCKED_DOMAINS.has(domainFull.toLowerCase())) return false;
+
+    // Basic text-based junk detection
+    if (looksJunk(title, body)) return false;
+
+    // Respect optional from/to filters AND enforce 72h freshness window
+    const timeOk = withinRange(pub as string | Date) && isRecent(pub as string | Date, 72);
+
+    const sourceOk =
+      !wantedSources || wantedSources.some((ws) => domain.includes(ws) || url.toLowerCase().includes(ws));
+
     const qOk = matchesQuery(title, body);
+
     return sourceOk && timeOk && qOk;
   });
+
+  // Lens-based scoring and ordering
+  const scored = filtered.map((s) => {
+    const { score, blackHits } = scoreStoryForLens(s, focus);
+    return Object.assign({}, s, { __score: score, __blackHits: blackHits });
+  }) as (IngestStory & { __score: number; __blackHits: number })[];
+
+  let tuned = scored;
+  if (focus === "black") {
+    tuned = tuned.filter((s) => s.__blackHits > 0);
+  }
+  if (typeof minScore === "number") {
+    tuned = tuned.filter((s) => s.__score >= minScore);
+  }
+
+  tuned.sort((a, b) => b.__score - a.__score);
+
+  // Replace filtered with tuned ordering
+  filtered = tuned as IngestStory[];
 
   // Optional hard limit of items to process
   if (typeof limitNum === "number") {
@@ -241,7 +406,10 @@ export async function GET(request: Request) {
 
   // Short-circuit if nothing to do
   if (!normalized.length) {
-    return NextResponse.json({ ok: true, inserted: 0, upsertedSummaries: 0, count: 0, totalFetched: fetchedRaw.length });
+    return NextResponse.json(
+      { ok: true, inserted: 0, upsertedSummaries: 0, count: 0, totalFetched: fetchedRaw.length },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   // Try to insert new stories, ignore duplicates (requires unique index on stories.id)
@@ -321,25 +489,30 @@ export async function GET(request: Request) {
     .filter((d) => !Number.isNaN(d.getTime()))
     .sort((a, b) => b.getTime() - a.getTime())[0];
 
-  return NextResponse.json({
-    ok: true,
-    inserted: insertedCount,
-    upsertedSummaries: upserted,
-    count: normalized.length,
-    totalFetched: fetchedRaw.length,
-    filters: {
-      source: sourceParam || null,
-      q: q || null,
-      from: fromStr || null,
-      to: toStr || null,
-      limit: limitNum ?? null,
-      dryRun,
+  return NextResponse.json(
+    {
+      ok: true,
+      inserted: insertedCount,
+      upsertedSummaries: upserted,
+      count: normalized.length,
+      totalFetched: fetchedRaw.length,
+      filters: {
+        source: sourceParam || null,
+        q: q || null,
+        from: fromStr || null,
+        to: toStr || null,
+        limit: limitNum ?? null,
+        dryRun,
+        focus,
+        minScore: typeof minScore === "number" ? minScore : null,
+      },
+      meta: includeMeta
+        ? {
+            sources: distinctSources,
+            latestPublishedAt: latestPublishedAt ? latestPublishedAt.toISOString() : null,
+          }
+        : undefined,
     },
-    meta: includeMeta
-      ? {
-          sources: distinctSources,
-          latestPublishedAt: latestPublishedAt ? latestPublishedAt.toISOString() : null,
-        }
-      : undefined,
-  });
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

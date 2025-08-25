@@ -91,9 +91,19 @@ export async function GET(req: NextRequest) {
 
   if (fromStr || toStr) {
     const range: Record<string, Date> = {};
-    if (fromStr) range.$gte = new Date(fromStr);
-    if (toStr)   range.$lte = new Date(toStr);
-    filter.publishedAt = range;
+    const fromDate = fromStr ? new Date(fromStr) : null;
+    const toDate = toStr ? new Date(toStr) : null;
+    if (fromDate && !isNaN(fromDate.getTime())) range.$gte = fromDate;
+    if (toDate && !isNaN(toDate.getTime())) range.$lte = toDate;
+    if (range.$gte && range.$lte && range.$gte > range.$lte) {
+      // swap if user passed reversed dates
+      const tmp = range.$gte;
+      range.$gte = range.$lte;
+      range.$lte = tmp;
+    }
+    if (Object.keys(range).length) {
+      filter.publishedAt = range;
+    }
   }
 
   if (q) {
@@ -224,5 +234,5 @@ export async function GET(req: NextRequest) {
     },
     meta,
     quota: quotaInfo,
-  }, { status: 200 });
+  }, { status: 200, headers: { "Cache-Control": "no-store" } });
 }
