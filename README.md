@@ -27,9 +27,7 @@ Kofa delivers concise, AI‑generated article summaries that highlight Black soc
 
 ---
 
-## 🚀 Features
-
-- **News ingestion:** Fetch via APIs (GNews, NewsData, RSS) → relevance/junk filtering → AI summarization → MongoDB.
+- **News ingestion:** Multi-source pipeline: NewsData → GNews → RSS (with defaults if unset). All feeds go through relevance/junk filtering → AI summarization → MongoDB.
 - **Black‑conscious summaries:** 3‑point bullets emphasizing history & community impact.
 - **Ranking lens:** Trust‑list boost for major outlets + extra weight for Black publishers (e.g. TheGrio, The Root, LA Sentinel). Configurable via env vars.
 - **Metered paywall:** 7 free reads/day; unlimited for subscribers.
@@ -40,14 +38,12 @@ Kofa delivers concise, AI‑generated article summaries that highlight Black soc
 
 ---
 
-## 🧱 Tech Stack
-
 - **Next.js 15** (App Router, TypeScript)
 - **MongoDB Atlas** (official Node.js driver)
 - **NextAuth v4** (Email provider)
 - **Stripe** (Checkout & Webhooks)
 - **OpenAI Node.js SDK**
-- **GNews / NewsData / RSS** (ingestion)
+- **NewsData / GNews / RSS fallback** (ingestion)
 - **Tailwind CSS**
 - **Vercel** (hosting + cron)
 
@@ -69,7 +65,7 @@ tsconfig.json
 
 ## 🛠️ Cron & Manual Fetch
 
-- **Vercel Cron:** Calls `/api/news/fetch` twice daily (06:00 & 18:00 UTC by default). Adjust in `vercel.json`.
+- **Vercel Cron:** Calls `/api/news/fetch` once daily (default 06:00 UTC). Adjust in `vercel.json`.
 - **Manual run:**
   ```bash
   export CRON_SECRET=your_cron_secret

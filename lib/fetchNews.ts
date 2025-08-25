@@ -53,6 +53,47 @@ function enforceLen(input: unknown, max = 120): string {
   return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
 }
 
+// ---------- Minimal RSS parsing (fallback) ----------
+function extractTag(src: string, tag: string): string | undefined {
+  const m = src.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return m ? m[1].trim() : undefined;
+}
+
+function stripCdata(s?: string): string {
+  if (!s) return "";
+  return s.replace(/<!\\[CDATA\\[/g, "").replace(/\\]\\]>/g, "").trim();
+}
+
+function parseRss(xml: string): Array<{ title?: string; url?: string; description?: string; publishedAt?: string; imageUrl?: string }> {
+  const items: string[] = xml.split(/<item\b[\\s\\S]*?>/i).slice(1).map(chunk => {
+    const end = chunk.indexOf("</item>");
+    return end >= 0 ? chunk.slice(0, end) : chunk;
+  });
+  const out: Array<{ title?: string; url?: string; description?: string; publishedAt?: string; imageUrl?: string }> = [];
+  for (const raw of items) {
+    const title = stripCdata(extractTag(raw, "title"));
+    const link = stripCdata(extractTag(raw, "link"));
+    const desc = stripCdata(extractTag(raw, "description")) || stripCdata(extractTag(raw, "content:encoded"));
+    const pub = stripCdata(extractTag(raw, "pubDate")) || stripCdata(extractTag(raw, "dc:date"));
+    // naive media enclosure
+    const mediaMatch = raw.match(/<media:content[^>]*url="([^"]+)"/i) || raw.match(/<enclosure[^>]*url="([^"]+)"/i);
+    const imageUrl = mediaMatch ? mediaMatch[1] : undefined;
+    out.push({ title, url: link, description: desc, publishedAt: pub, imageUrl });
+  }
+  return out;
+}
+
+async function fetchRssFeed(url: string): Promise<ReturnType<typeof parseRss>> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    return parseRss(xml);
+  } catch {
+    return [];
+  }
+}
+
 // ---------- Filtering (domains, junk, freshness) ----------
 const BLOCKED_DOMAINS = new Set(
   [
@@ -270,6 +311,37 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
       }
     } catch {
       // still nothing—return gracefully
+    }
+  }
+
+  // 3) Fallback: RSS feeds (FEED_URLS or built-in defaults)
+  if (candidates.length === 0) {
+    const feedsEnv = (process.env.FEED_URLS || "").split(",").map(s => s.trim()).filter(Boolean);
+    const defaultFeeds = [
+      "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+      "https://feeds.bbci.co.uk/news/rss.xml",
+      "https://www.npr.org/sections/news/rss.xml",
+    ];
+    const feeds = feedsEnv.length ? feedsEnv : defaultFeeds;
+    const rssResults: typeof candidates = [];
+    for (const f of feeds.slice(0, 5)) { // safety bound
+      const items = await fetchRssFeed(f);
+      for (const it of items) {
+        const url = normalizeUrl(it.url);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        rssResults.push({
+          title: it.title ?? "Untitled",
+          url,
+          description: it.description ?? "",
+          publishedAt: it.publishedAt,
+          imageUrl: it.imageUrl,
+        });
+      }
+      if (rssResults.length > 60) break; // cap
+    }
+    if (rssResults.length) {
+      candidates.push(...rssResults);
     }
   }
 
