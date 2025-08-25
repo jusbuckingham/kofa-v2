@@ -69,7 +69,7 @@ tsconfig.json
 
 ## 🛠️ Cron & Manual Fetch
 
-- **Vercel Cron:** Calls `/api/news/fetch` every 8 hours (default). Adjust in `vercel.json`.
+- **Vercel Cron:** Calls `/api/news/fetch` twice daily (06:00 & 18:00 UTC by default). Adjust in `vercel.json`.
 - **Manual run:**
   ```bash
   export CRON_SECRET=your_cron_secret
