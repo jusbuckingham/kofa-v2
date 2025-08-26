@@ -282,7 +282,7 @@ export interface StoryDoc {
   url: string;
   summary: {
     oneLiner: string;
-    bullets: string[]; // exactly 4 strings, each ≤ 120 chars
+    bullets: string[]; // exactly 5 strings (Five Ws), each ≤ 120 chars
   };
   publishedAt: Date;
   createdAt: Date;
@@ -466,9 +466,9 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
       oneLiner: enforceLen(s.oneLiner),
       bullets: (() => {
         const arr = Array.isArray(s.bullets) ? s.bullets : [];
-        const four = arr.slice(0, 4).map((b) => enforceLen(b));
-        while (four.length < 4) four.push("");
-        return four;
+        const five = arr.slice(0, 5).map((b) => enforceLen(b));
+        while (five.length < 5) five.push("");
+        return five;
       })(),
     };
 
