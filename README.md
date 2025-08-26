@@ -27,7 +27,7 @@ Kofa delivers concise, AI‑generated article summaries that highlight Black soc
 
 ---
 
-- **News ingestion:** Multi-source pipeline: NewsData → GNews → RSS (with defaults if unset). All feeds go through relevance/junk filtering → AI summarization → MongoDB.
+- **News ingestion:** Multi-source pipeline: NewsData → GNews → RSS (with defaults if unset, including TheGrio, The Root, Capital B, LA Sentinel, Essence). All feeds go through relevance/junk filtering → AI summarization → MongoDB.
 - **Black‑conscious summaries:** 3‑point bullets emphasizing history & community impact.
 - **Ranking lens:** Trust‑list boost for major outlets + extra weight for Black publishers (e.g. TheGrio, The Root, LA Sentinel). Configurable via env vars.
 - **Metered paywall:** 7 free reads/day; unlimited for subscribers.
