@@ -5,7 +5,7 @@ export const revalidate = 0;
 
 import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
-import clientPromise from '@/lib/mongodb';
+import { getDb } from '@/lib/mongoClient';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('[webhook] Missing STRIPE_SECRET_KEY');
@@ -19,14 +19,14 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2022-11
 export async function POST(req: NextRequest) {
   const sig = req.headers.get('stripe-signature');
   if (!sig) {
-    return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
 
   let buf: ArrayBuffer;
   try {
     buf = await req.arrayBuffer();
   } catch {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
   let event: Stripe.Event;
 
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: unknown) {
     console.error('❌ Webhook signature verification failed:', (err as Error).message);
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
 
   // Relevant Stripe event types
@@ -57,10 +57,10 @@ export async function POST(req: NextRequest) {
   ]);
 
   if (!relevant.has(event.type)) {
-    return NextResponse.json({ received: true }, { status: 200 });
+    return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   }
 
-  const db = (await clientPromise).db(process.env.MONGODB_DB_NAME || 'kofa');
+  const db = await getDb();
   const users = db.collection('user_metadata');
   const usersCore = db.collection('users');
 
@@ -147,9 +147,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ received: true }, { status: 200 });
+    return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (err: unknown) {
     console.error('Webhook handler error:', (err as Error).message);
-    return NextResponse.json({ error: 'Webhook error' }, { status: 500 });
+    return NextResponse.json({ error: 'Webhook error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
