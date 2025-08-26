@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
 
   const client = await clientPromise;
   const db     = client.db(process.env.MONGODB_DB_NAME || "kofa");
-  const col    = db.collection("summaries");
+  const col    = db.collection("stories");
 
   const total = await col.countDocuments(filter);
   // fetch raw documents matching filters
@@ -205,9 +205,10 @@ export async function GET(req: NextRequest) {
 
   const hasMore = offset + stories.length < total;
 
-  // Optional metadata: only computed if explicitly requested via `meta=1`
+  // Optional metadata: computed only when explicitly requested via `meta=1` or `includeMeta=1`
   let meta: Record<string, unknown> | undefined;
-  if (searchParams.get("meta") === "1") {
+  const includeMeta = searchParams.get("meta") === "1" || searchParams.get("includeMeta") === "1";
+  if (includeMeta) {
     const distinctSources = await col.distinct("source", filter);
     const latestDoc = await col.find(filter).sort({ publishedAt: -1 }).limit(1).toArray();
     meta = {

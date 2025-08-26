@@ -183,6 +183,25 @@ const TRUSTED_DOMAINS = new Set(
   ].map((d) => d.toLowerCase())
 );
 
+const BLACK_PUBLISHER_DOMAINS = new Set(
+  [
+    "thegrio.com",
+    "theroot.com",
+    "capitalbnews.org",
+    "blavity.com",
+    "essence.com",
+    "andscape.com",
+    "lasentinel.net",
+    "amsterdamnews.com",
+    "afro.com",
+    "defendernetwork.com",
+    "blackenterprise.com",
+    "thecharlottepost.com",
+    "theatlantavoice.com",
+    "washingtoninformer.com",
+  ].map((d) => d.toLowerCase())
+);
+
 // Terms that frequently indicate Black news / civil-rights relevance
 const BLACK_PATTERNS: RegExp[] = [
   /\bblack\b/i,
@@ -223,6 +242,12 @@ function scoreStoryForLens(
   // Trust signals
   if (domain && TRUSTED_DOMAINS.has(domain)) score += 3;
 
+  // Boost for Black-focused publishers (higher when lens === "black")
+  const blackBoostBase = Number(process.env.NEWS_BLACK_DOMAIN_BOOST || 2);
+  if (domain && BLACK_PUBLISHER_DOMAINS.has(domain)) {
+    score += (_lens === "black" ? blackBoostBase * 2 : blackBoostBase);
+  }
+
   // Topical/recency cues in the headline
   if (/\b(breaking|live|update|exclusive)\b/i.test(title)) score += 1;
 
@@ -252,7 +277,16 @@ export async function GET(request: Request) {
     request.headers.get("x-vercel-cron") || request.headers.get("x-vercel-schedule");
 
   // In production, accept either the Vercel Cron header or the shared secret
-  if (!isDev && !vercelCronHeader && (!secret || authHeader !== secret)) {
+  // Optional: allow unauthenticated dry-run reads when ALLOW_FETCH_DRYRUN_PUBLIC=1
+  const urlObj = new URL(request.url);
+  const sp = urlObj.searchParams;
+  const allowPublicDryRun = process.env.ALLOW_FETCH_DRYRUN_PUBLIC === "1";
+  if (
+    !isDev &&
+    !vercelCronHeader &&
+    (!secret || authHeader !== secret) &&
+    !(allowPublicDryRun && (sp.get("dryRun") === "1" || sp.get("dry") === "1"))
+  ) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: { "Cache-Control": "no-store" } }
@@ -260,8 +294,7 @@ export async function GET(request: Request) {
   }
 
   // Parse optional query parameters for filtering and control
-  const urlObj = new URL(request.url);
-  const sp = urlObj.searchParams;
+  // urlObj and sp already declared above
   const sourceParam = sp.get("source"); // e.g. "bbc.com,nytimes.com,BBC"
   const q = sp.get("q")?.trim() || ""; // free-text match
   const fromStr = sp.get("from"); // ISO date
@@ -269,7 +302,7 @@ export async function GET(request: Request) {
   const limitParam = sp.get("limit");
   const limitNum = limitParam ? Math.max(1, Math.min(1000, Number(limitParam) || 0)) : undefined; // hard cap
   const dryRun = sp.get("dryRun") === "1" || sp.get("dry") === "1"; // if true, do not write to DB
-  const includeMeta = sp.get("meta") === "1"; // attach summary meta in response
+  const includeMeta = sp.get("meta") === "1" || sp.get("includeMeta") === "1"; // attach summary meta in response
 
   const focusParam = (sp.get("focus") || sp.get("lens") || "top").toLowerCase();
   const focus: "top" | "black" = focusParam === "black" ? "black" : "top";
@@ -327,8 +360,8 @@ export async function GET(request: Request) {
     // Basic text-based junk detection
     if (looksJunk(title, body)) return false;
 
-    // Respect optional from/to filters AND enforce 72h freshness window
-    const timeOk = withinRange(pub as string | Date) && isRecent(pub as string | Date, 72);
+    // Respect optional from/to filters AND enforce 120h freshness window
+    const timeOk = withinRange(pub as string | Date) && isRecent(pub as string | Date, 120);
 
     const sourceOk =
       !wantedSources || wantedSources.some((ws) => domain.includes(ws) || url.toLowerCase().includes(ws));

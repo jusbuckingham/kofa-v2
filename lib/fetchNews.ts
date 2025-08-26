@@ -83,12 +83,32 @@ function parseRss(xml: string): Array<{ title?: string; url?: string; descriptio
   return out;
 }
 
+function parseAtom(xml: string): Array<{ title?: string; url?: string; description?: string; publishedAt?: string; imageUrl?: string }> {
+  const entries: string[] = xml.split(/<entry\b[\s\S]*?>/i).slice(1).map(chunk => {
+    const end = chunk.indexOf("</entry>");
+    return end >= 0 ? chunk.slice(0, end) : chunk;
+  });
+  const out: Array<{ title?: string; url?: string; description?: string; publishedAt?: string; imageUrl?: string }> = [];
+  for (const raw of entries) {
+    const title = stripCdata(extractTag(raw, "title"));
+    const linkMatch = raw.match(/<link[^>]*href="([^"]+)"/i);
+    const link = linkMatch ? linkMatch[1] : stripCdata(extractTag(raw, "link"));
+    const summary = stripCdata(extractTag(raw, "summary")) || stripCdata(extractTag(raw, "content"));
+    const updated = stripCdata(extractTag(raw, "updated")) || stripCdata(extractTag(raw, "published"));
+    const mediaMatch = raw.match(/<media:content[^>]*url="([^"]+)"/i);
+    const imageUrl = mediaMatch ? mediaMatch[1] : undefined;
+    out.push({ title, url: link, description: summary, publishedAt: updated, imageUrl });
+  }
+  return out;
+}
+
 async function fetchRssFeed(url: string): Promise<ReturnType<typeof parseRss>> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": "KofaBot/1.0 (+https://www.kofa.ai)" } });
     if (!res.ok) return [];
     const xml = await res.text();
-    return parseRss(xml);
+    const isAtom = /<feed\b/i.test(xml) && /<entry\b/i.test(xml);
+    return isAtom ? parseAtom(xml) : parseRss(xml);
   } catch {
     return [];
   }
@@ -102,10 +122,6 @@ const BLOCKED_DOMAINS = new Set(
     "businesswire.com",
     "globenewswire.com",
     "newswire.com",
-    "investing.com",
-    "marketwatch.com",
-    "benzinga.com",
-    "finance.yahoo.com",
     // low-signal clickbait or coupon/deals
     "dealnews.com",
     "slickdeals.net",
@@ -318,13 +334,22 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   if (candidates.length === 0) {
     const feedsEnv = (process.env.FEED_URLS || "").split(",").map(s => s.trim()).filter(Boolean);
     const defaultFeeds = [
+      // Top/General
       "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
       "https://feeds.bbci.co.uk/news/rss.xml",
       "https://www.npr.org/sections/news/rss.xml",
+      "https://feeds.reuters.com/reuters/topNews",
+      "https://www.theguardian.com/us-news/rss",
+      // Black-focused / culture
+      "https://thegrio.com/feed/",
+      "https://www.theroot.com/rss",
+      "https://capitalbnews.org/feed/",
+      "https://lasentinel.net/feed",
+      "https://www.essence.com/feed/",
     ];
     const feeds = feedsEnv.length ? feedsEnv : defaultFeeds;
     const rssResults: typeof candidates = [];
-    for (const f of feeds.slice(0, 5)) { // safety bound
+    for (const f of feeds.slice(0, 8)) { // slightly wider safety bound
       const items = await fetchRssFeed(f);
       for (const it of items) {
         const url = normalizeUrl(it.url);
@@ -338,7 +363,7 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
           imageUrl: it.imageUrl,
         });
       }
-      if (rssResults.length > 60) break; // cap
+      if (rssResults.length > 120) break; // higher cap
     }
     if (rssResults.length) {
       candidates.push(...rssResults);
@@ -355,8 +380,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     if (!c.url || !domain) return false;
     if (BLOCKED_DOMAINS.has(domain)) return false;
     if (looksJunk(c.title, c.description)) return false;
-    // If publishedAt present, enforce freshness; if missing, allow
-    return !c.publishedAt || isRecent(c.publishedAt, 72);
+    // If publishedAt present, enforce freshness; if missing, allow (120h)
+    return !c.publishedAt || isRecent(c.publishedAt, 120);
   });
 
   if (filteredCandidates.length === 0) {
@@ -364,13 +389,10 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   }
 
   // Lens tuning to match API route (env-driven)
-  const lensEnv = (process.env.NEWS_LENS || "top").toLowerCase();
-  const lens: "top" | "black" = lensEnv === "black" ? "black" : "top";
-  const minScoreEnv = Number(process.env.NEWS_MIN_SCORE || "");
-  const minScore = Number.isFinite(minScoreEnv) ? minScoreEnv : undefined;
-  const allowlistOnly = process.env.NEWS_ALLOWLIST_ONLY === "1";
+  // Always use TOP lens for ingestion; keep Black-conscious boosts in scoring
+  const lens: "top" | "black" = "top";
 
-  let scored = filteredCandidates.map((c) => {
+  const scored = filteredCandidates.map((c) => {
     const domain = getDomain(c.url).toLowerCase();
     const { score, blackHits } = scoreStoryForLens(c.title || "", c.description || "", domain, lens);
     return { ...c, __score: score, __blackHits: blackHits, __domain: domain } as typeof c & {
@@ -378,20 +400,10 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     };
   });
 
-  if (lens === "black") {
-    scored = scored.filter((c) => c.__blackHits > 0);
-  }
-  if (typeof minScore === "number") {
-    scored = scored.filter((c) => c.__score >= minScore);
-  }
-  if (allowlistOnly) {
-    scored = scored.filter((c) => TRUSTED_DOMAINS.has(c.__domain));
-  }
-
   scored.sort((a, b) => b.__score - a.__score);
 
   // Soft cap to protect token spend
-  const MAX_TO_SUMMARIZE = Number(process.env.MAX_TO_SUMMARIZE || 40);
+  const MAX_TO_SUMMARIZE = Number(process.env.MAX_TO_SUMMARIZE || 80);
   const worklist = scored.slice(0, Math.max(1, Math.min(200, MAX_TO_SUMMARIZE)));
 
   // De-dupe against DB and summarize
