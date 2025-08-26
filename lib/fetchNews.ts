@@ -125,14 +125,36 @@ const BLOCKED_DOMAINS = new Set(
     // low-signal clickbait or coupon/deals
     "dealnews.com",
     "slickdeals.net",
+    // noisy/low-signal source seen in prod
+    "manilatimes.net",
   ].map((d) => d.toLowerCase())
 );
+
 
 const JUNK_PATTERNS: RegExp[] = [
   /\b(sponsored|sponsored content|advertorial)\b/i,
   /\b(promo|deal|discount|sale|coupon|giveaway|sweepstake)\b/i,
   /\bbetting|odds|sportsbook|casino\b/i,
   /\bhoroscope\b/i,
+];
+
+const EXTRA_JUNK_PATTERNS: RegExp[] = [
+  /\b(exclusive offer|special offer|limited time|flash sale|holiday sale|labor day|black friday|cyber monday)\b/i,
+  /\b(discount|deal|sale|promo|promotion|coupon|voucher|markdown|bargain|clearance)\b/i,
+  /\b(prices?|savings?|save \$?\d+|save \d+%|\d+% off|buy one get one|bogo)\b/i,
+  /\b(sponsored|partner(ed)? content|brand(ed)? content|paid post)\b/i,
+  /\b(giveaway|contest|sweepstake|raffle)\b/i,
+];
+
+// URL-based junk hints (sections/paths that are usually ads or PR)
+const URL_JUNK_PATTERNS: RegExp[] = [
+  /\/pr\//i,
+  /\/press(-|_)?release\//i,
+  /\/sponsored\//i,
+  /\/partner(s|ed)?\//i,
+  /\/advertorial\//i,
+  /\/deals?\//i,
+  /\/coupons?\//i,
 ];
 
 function isRecent(iso?: string | Date, hours = 72): boolean {
@@ -142,7 +164,10 @@ function isRecent(iso?: string | Date, hours = 72): boolean {
 
 function looksJunk(title?: string, description?: string): boolean {
   const s = `${title || ""} ${description || ""}`;
-  return JUNK_PATTERNS.some((rx) => rx.test(s));
+  return (
+    JUNK_PATTERNS.some((rx) => rx.test(s)) ||
+    EXTRA_JUNK_PATTERNS.some((rx) => rx.test(s))
+  );
 }
 
 // ---------- Lens scoring (trusted outlets + Black-news boost) ----------
@@ -380,6 +405,7 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     if (!c.url || !domain) return false;
     if (BLOCKED_DOMAINS.has(domain)) return false;
     if (looksJunk(c.title, c.description)) return false;
+    if (URL_JUNK_PATTERNS.some((rx) => rx.test(c.url))) return false;
     // If publishedAt present, enforce freshness; if missing, allow (120h)
     return !c.publishedAt || isRecent(c.publishedAt, 120);
   });
@@ -414,6 +440,10 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     if (exists) continue;
 
     const textToSummarize = `${c.title ?? ""}\n\n${c.description ?? ""}`.trim();
+    // Minimum body length to avoid summarizing ads/stubs
+    if (!textToSummarize || textToSummarize.replace(/\s+/g, "").length < 500) {
+      continue;
+    }
 
     let s: { oneLiner?: string; bullets?: string[] } = {};
     try {
