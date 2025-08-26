@@ -5,7 +5,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import clientPromise from '@/lib/mongodb';
+import { getDb } from '@/lib/mongoClient';
 
 // Types
 type FavoriteDoc = {
@@ -24,8 +24,7 @@ async function ensureFavoritesIndex() {
   if (!ensureIndexPromise) {
     ensureIndexPromise = (async () => {
       try {
-        const client = await clientPromise;
-        const db = client.db(process.env.MONGODB_DB);
+        const db = await getDb();
         await db
           .collection<FavoriteDoc>("favorites")
           .createIndex({ email: 1, storyId: 1 }, { unique: true, name: "uniq_email_story" });
@@ -38,7 +37,10 @@ async function ensureFavoritesIndex() {
 }
 
 function jsonError(message: string, status = 400) {
-  return NextResponse.json({ ok: false, error: message }, { status });
+  return NextResponse.json(
+    { ok: false, error: message },
+    { status, headers: { 'Cache-Control': 'no-store' } }
+  );
 }
 
 async function requireSession() {
@@ -54,8 +56,7 @@ export async function GET() {
   try {
     const email = await requireSession();
     await ensureFavoritesIndex();
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB);
+    const db = await getDb();
 
     const favs = await db
       .collection<FavoriteDoc>('favorites')
@@ -63,8 +64,8 @@ export async function GET() {
       .project<{ storyId: string }>({ _id: 0, storyId: 1 })
       .toArray();
 
-    const items = favs.map((f) => ({ id: f.storyId }));
-    return NextResponse.json(items, { status: 200 });
+    const items = favs.map((f: { storyId: string }) => ({ id: f.storyId }));
+    return NextResponse.json(items, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to load favorites', 500);
@@ -91,8 +92,7 @@ export async function POST(req: NextRequest) {
 
     await ensureFavoritesIndex();
 
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB);
+    const db = await getDb();
 
     await db
       .collection<FavoriteDoc>('favorites')
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         { upsert: true }
       );
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to save favorite', 500);
@@ -129,12 +129,11 @@ export async function DELETE(req: NextRequest) {
 
     await ensureFavoritesIndex();
 
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB);
+    const db = await getDb();
 
     await db.collection<FavoriteDoc>('favorites').deleteOne({ email, storyId });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to remove favorite', 500);

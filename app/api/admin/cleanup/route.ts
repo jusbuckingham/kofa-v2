@@ -6,12 +6,14 @@ export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import clientPromise from '@/lib/mongodb';
+import { getDb } from '@/lib/mongoClient';
+
+const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
   }
 
   // Admin allowlist: comma-separated emails in ENV, case-insensitive
@@ -20,25 +22,23 @@ export async function GET() {
     ? true // if no allowlist is set, default to allowing any authenticated user
     : allow.includes(session.user.email.trim().toLowerCase());
   if (!isAllowed) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: NO_STORE });
   }
 
   try {
-    const days = Number.isFinite(Number(process.env.CLEANUP_DAYS))
-      ? parseInt(process.env.CLEANUP_DAYS as string, 10)
-      : 30;
+    const rawDays = parseInt(String(process.env.CLEANUP_DAYS ?? ''), 10);
+    const days = Number.isFinite(rawDays) ? Math.min(365, Math.max(7, rawDays)) : 30;
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB_NAME || 'kofa');
+    const db = await getDb();
 
     // Ensure we only delete documents with Date-type publishedAt older than cutoff
     const result = await db
       .collection('stories')
       .deleteMany({ publishedAt: { $type: 'date', $lt: cutoff } });
 
-    return NextResponse.json({ ok: true, deleted: result.deletedCount, cutoff: cutoff.toISOString(), days }, { status: 200 });
+    return NextResponse.json({ ok: true, deleted: result.deletedCount, cutoff: cutoff.toISOString(), days }, { status: 200, headers: NO_STORE });
   } catch (err) {
-    return NextResponse.json({ error: 'Cleanup failed', details: String(err) }, { status: 500 });
+    return NextResponse.json({ error: 'Cleanup failed', details: String(err) }, { status: 500, headers: NO_STORE });
   }
 }

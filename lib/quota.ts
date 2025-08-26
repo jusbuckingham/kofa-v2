@@ -1,4 +1,4 @@
-import clientPromise from "@/lib/mongodb";
+import { getDb } from "@/lib/mongoClient";
 import { FREE_DAILY_STORY_LIMIT } from "@/lib/constants";
 
 // Canonical limit comes from centralized constants
@@ -38,8 +38,7 @@ function startOfUTCday(d: Date = new Date()): number {
 }
 
 async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Promise<QuotaResult> {
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB || process.env.MONGODB_DB_NAME || "kofa");
+  const db = await getDb();
   const coll = db.collection<UserMetaDoc>("user_metadata");
 
   const keyEmail = email.trim().toLowerCase();

@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
   const sort: Record<string, 1 | -1> = sortParam === "publishedAt" ? { publishedAt: 1 } : { publishedAt: -1 };
 
   const client = await clientPromise;
-  const db     = client.db(process.env.MONGODB_DB_NAME || "kofa");
+  const db     = client.db(process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "kofa");
   const col    = db.collection("stories");
 
   const total = await col.countDocuments(filter);

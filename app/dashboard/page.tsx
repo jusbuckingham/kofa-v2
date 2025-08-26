@@ -9,7 +9,7 @@ import Link from "next/link";
 import { ObjectId } from "mongodb";
 
 import { authOptions } from "@/lib/auth";
-import clientPromise from "@/lib/mongodb";
+import { getDb } from "@/lib/mongoClient";
 import type { SummaryItem } from "@/types";
 import StoryCard from "@/components/StoryCard";
 import CleanUrlClient from "@/components/CleanUrlClient";
@@ -20,6 +20,10 @@ interface StoryDoc {
   _id: ObjectId;
   title?: string;
   url?: string;
+  // New top-level fields written by fetch route
+  oneLiner?: string;
+  bullets?: string[];
+  // Legacy nested summary for back-compat
   summary?: {
     oneLiner?: string;
     bullets?: string[];
@@ -27,8 +31,17 @@ interface StoryDoc {
   imageUrl?: string;
   publishedAt?: Date | string;
   source?: string;
-  sources?: string[];
+  sources?: Array<
+    | string
+    | {
+        title?: string;
+        domain?: string;
+        url?: string;
+      }
+  >;
 }
+
+interface FavoriteDoc { email: string; storyId: string }
 
 export default async function DashboardPage() {
   // ===== Auth guard =====
@@ -40,13 +53,11 @@ export default async function DashboardPage() {
   const email = session.user.email.trim().toLowerCase();
 
   // ===== DB =====
-  const dbName = process.env.MONGODB_DB_NAME || "kofa";
-  const client = await clientPromise;
-  const db = client.db(dbName);
+  const db = await getDb();
 
   // ===== Load favorites =====
-  const favDocs = await db
-    .collection<{ email: string; storyId: string }>("favorites")
+  const favDocs: FavoriteDoc[] = await db
+    .collection<FavoriteDoc>("favorites")
     .find({ email })
     .toArray();
 
@@ -67,15 +78,31 @@ export default async function DashboardPage() {
   }
 
   // ===== Fetch stories by ID =====
-  const ids = favDocs.map((f) => new ObjectId(f.storyId));
+  const ids = favDocs.map((f: FavoriteDoc) => new ObjectId(f.storyId));
+  const validIds = ids.filter((id: ObjectId) => ObjectId.isValid(id));
+  if (validIds.length === 0) {
+    return (
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <CleanUrlClient />
+        <h1 className="text-2xl font-bold mb-4">Your Favorites</h1>
+        <p className="text-center text-gray-500">
+          You have no saved summaries.&nbsp;
+          <Link href="/" className="underline hover:text-gray-700 dark:hover:text-gray-200">
+            Browse summaries
+          </Link>
+          &nbsp;to add some.
+        </p>
+      </main>
+    );
+  }
   const storyDocs = await db
     .collection<StoryDoc>("stories")
-    .find({ _id: { $in: ids } })
+    .find({ _id: { $in: validIds } })
     .sort({ publishedAt: -1 })
     .toArray();
 
   // ===== Map to SummaryItem =====
-  const stories: SummaryItem[] = storyDocs.map((doc) => {
+  const stories: SummaryItem[] = storyDocs.map((doc: StoryDoc) => {
     const url = doc.url ?? "";
     const publishedAt =
       doc.publishedAt instanceof Date
@@ -88,22 +115,35 @@ export default async function DashboardPage() {
       id: doc._id.toString(),
       title: doc.title ?? "Untitled",
       url,
-      oneLiner: doc.summary?.oneLiner ?? "",
-      bullets: Array.isArray(doc.summary?.bullets)
-        ? doc.summary!.bullets.slice(0, 4)
-        : ["", "", "", ""],
+      oneLiner: (doc.oneLiner ?? doc.summary?.oneLiner ?? "").trim(),
+      bullets: (() => {
+        const b = Array.isArray(doc.bullets)
+          ? doc.bullets
+          : Array.isArray(doc.summary?.bullets)
+          ? doc.summary!.bullets
+          : [];
+        const four = b.slice(0, 4);
+        while (four.length < 4) four.push("");
+        return four;
+      })(),
       colorNote: "",
       imageUrl: doc.imageUrl ?? undefined,
       publishedAt,
       source: doc.source ?? (url ? new URL(url).hostname.replace(/^www\./, "") : ""),
       sources: Array.isArray(doc.sources)
-        ? doc.sources.map((src) => {
+        ? (doc.sources as NonNullable<StoryDoc["sources"]>).map((src: StorySourceEntry) => {
+            if (typeof src === "object" && src !== null) {
+              const t = String(src.title ?? "");
+              const d = String(src.domain ?? (src.url ? new URL(src.url).hostname.replace(/^www\./, "") : t));
+              const u = String(src.url ?? "");
+              return { title: t || d, domain: d, url: u };
+            }
+            const safe = String(src ?? "");
             try {
-              const u = new URL(src);
+              const u = new URL(safe);
               const host = u.hostname.replace(/^www\./, "");
-              return { title: host, domain: host, url: src };
+              return { title: host, domain: host, url: safe };
             } catch {
-              const safe = String(src ?? "");
               return { title: safe, domain: safe, url: safe };
             }
           })
@@ -127,3 +167,4 @@ export default async function DashboardPage() {
     </main>
   );
 }
+type StorySourceEntry = NonNullable<StoryDoc["sources"]>[number];

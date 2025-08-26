@@ -54,7 +54,8 @@ export default function ManageSubscriptionPage() {
       });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok || !data?.url) {
-        setError(data?.error || 'Could not open billing portal.');
+        const fallback = (await res.text().catch(() => '')).trim();
+        setError(data?.error || fallback || 'Could not open billing portal.');
         return;
       }
       window.location.href = data.url;
@@ -65,6 +66,7 @@ export default function ManageSubscriptionPage() {
     }
   };
 
+  if (status === 'loading') return <p>Checking session…</p>;
   if (status !== 'authenticated') return <p>Please log in to manage your subscription.</p>;
   if (loading) return <p>Loading subscription…</p>;
   if (!sub) {
@@ -84,7 +86,9 @@ export default function ManageSubscriptionPage() {
     );
   }
 
-  const endDate = new Date(sub.current_period_end * 1000).toLocaleDateString();
+  const endDate = new Date(sub.current_period_end * 1000).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric'
+  });
 
   return (
     <div>
@@ -101,6 +105,7 @@ export default function ManageSubscriptionPage() {
         onClick={handlePortal}
         disabled={portalLoading}
         className="mt-2 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+        aria-busy={portalLoading}
       >
         {portalLoading ? 'Opening…' : 'Manage in Customer Portal'}
       </button>

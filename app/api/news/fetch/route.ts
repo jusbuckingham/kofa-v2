@@ -3,7 +3,7 @@ export const revalidate = 0;
 // app/api/news/fetch/route.ts
 import { NextResponse } from "next/server";
 import fetchNewsFromSource from "@/lib/fetchNews";
-import { clientPromise } from "@/lib/mongoClient";
+import { getDb } from "@/lib/mongoClient";
 import { MongoBulkWriteError } from "mongodb";
 import summarizeWithPerspective from "@/lib/summarize";
 
@@ -42,14 +42,6 @@ interface NormalizedStory {
   };
 }
 
-/** Bulk op for summaries upsert */
-type SummaryOp = {
-  updateOne: {
-    filter: { id: string };
-    update: { $set: Record<string, unknown> };
-    upsert: boolean;
-  };
-};
 
 // --- helpers ---------------------------------------------------------------
 function clampBullet(s: string, max = 120): string {
@@ -128,13 +120,11 @@ const BLOCKED_DOMAINS = new Set(
     "businesswire.com",
     "globenewswire.com",
     "newswire.com",
-    "investing.com",
-    "marketwatch.com",
-    "benzinga.com",
-    "finance.yahoo.com",
     // low-signal clickbait or coupon/deals
     "dealnews.com",
     "slickdeals.net",
+    // noisy/low-signal source seen in prod
+    "manilatimes.net",
   ].map((d) => d.toLowerCase())
 );
 
@@ -146,6 +136,24 @@ const JUNK_PATTERNS: RegExp[] = [
   /\bhoroscope\b/i,
 ];
 
+const EXTRA_JUNK_PATTERNS: RegExp[] = [
+  /\b(exclusive offer|special offer|limited time|flash sale|holiday sale|labor day|black friday|cyber monday)\b/i,
+  /\b(discount|deal|sale|promo|promotion|coupon|voucher|markdown|bargain|clearance)\b/i,
+  /\b(prices?|savings?|save \$?\d+|save \d+%|\d+% off|buy one get one|bogo)\b/i,
+  /\b(sponsored|partner(ed)? content|brand(ed)? content|paid post)\b/i,
+  /\b(giveaway|contest|sweepstake|raffle)\b/i,
+];
+
+const URL_JUNK_PATTERNS: RegExp[] = [
+  /\/pr\//i,
+  /\/press(-|_)?release\//i,
+  /\/sponsored\//i,
+  /\/partner(s|ed)?\//i,
+  /\/advertorial\//i,
+  /\/deals?\//i,
+  /\/coupons?\//i,
+];
+
 function isRecent(iso?: string | Date, hours = 72): boolean {
   const d = iso ? new Date(iso) : new Date(0);
   return Date.now() - d.getTime() <= hours * 3600_000;
@@ -153,7 +161,10 @@ function isRecent(iso?: string | Date, hours = 72): boolean {
 
 function looksJunk(title?: string, description?: string): boolean {
   const s = `${title || ""} ${description || ""}`;
-  return JUNK_PATTERNS.some((rx) => rx.test(s));
+  return (
+    JUNK_PATTERNS.some((rx) => rx.test(s)) ||
+    EXTRA_JUNK_PATTERNS.some((rx) => rx.test(s))
+  );
 }
 
 // --- tuning for "top" and "black" lenses ----------------------------------
@@ -359,6 +370,7 @@ export async function GET(request: Request) {
 
     // Basic text-based junk detection
     if (looksJunk(title, body)) return false;
+    if (URL_JUNK_PATTERNS.some((rx) => rx.test(url))) return false;
 
     // Respect optional from/to filters AND enforce 120h freshness window
     const timeOk = withinRange(pub as string | Date) && isRecent(pub as string | Date, 120);
@@ -422,17 +434,12 @@ export async function GET(request: Request) {
   );
 
   // Connect to MongoDB
-  const client = await clientPromise;
-  const dbName = process.env.MONGODB_DB_NAME;
-  const db = client.db(dbName && dbName.trim() ? dbName : undefined);
+  const db = await getDb();
   const storiesColl = db.collection<NormalizedStory>("stories");
-  const summariesColl = db.collection("summaries");
 
   // Ensure indexes (no-throw if already exist)
   try {
     await storiesColl.createIndex({ id: 1 }, { unique: true, background: true });
-    await summariesColl.createIndex({ id: 1 }, { unique: true, background: true });
-    await summariesColl.createIndex({ publishedAt: -1 }, { background: true });
   } catch {
     // ignore index races
   }
@@ -462,21 +469,34 @@ export async function GET(request: Request) {
     }
   }
 
-  // Build summaries for each story (best‑effort fields)
-  const summaryOps: SummaryOp[] = await mapInBatches(normalized, 8, async (s) => {
+  // Build summaries for each story and persist **inside** the `stories` collection
+  type StoryUpdateOp = {
+    updateOne: {
+      filter: { id: string };
+      update: { $set: Record<string, unknown> };
+      upsert: boolean;
+    };
+  };
+
+  const storyOps: StoryUpdateOp[] = await mapInBatches(normalized, 8, async (s) => {
     const body = s.raw?.content || s.raw?.description || s.raw?.snippet || s.raw?.excerpt || s.title;
 
-    let oneLiner = "";
-    let bullets: string[] = ["", "", "", ""];
-    try {
-      const ai = await summarizeWithPerspective(body);
-      oneLiner = (ai.oneLiner || s.title).trim();
-      const raw = Array.isArray(ai.bullets) ? ai.bullets : [];
-      const normalizedBullets = raw.slice(0, 4);
-      while (normalizedBullets.length < 4) normalizedBullets.push("");
-      bullets = normalizedBullets.map((b) => clampBullet(b, 120));
-    } catch {
-      oneLiner = s.title;
+    // Skip summarization for ad-like/very short bodies
+    const compactLen = (body || "").replace(/\s+/g, "").length;
+    let oneLiner = s.title;
+    let bullets: string[] = ["", "", "", "", ""];
+
+    if (compactLen >= 280) {
+      try {
+        const ai = await summarizeWithPerspective(body);
+        oneLiner = (ai.oneLiner || s.title).trim();
+        const rawB = Array.isArray(ai.bullets) ? ai.bullets : [];
+        const normalizedBullets = rawB.slice(0, 5);
+        while (normalizedBullets.length < 5) normalizedBullets.push("");
+        bullets = normalizedBullets.map((b) => clampBullet(b, 120));
+      } catch {
+        // keep defaults
+      }
     }
 
     const sources = [{ title: s.title, url: s.url, domain: toDomain(s.url) }];
@@ -486,27 +506,20 @@ export async function GET(request: Request) {
         filter: { id: s.id },
         update: {
           $set: {
-            id: s.id,
-            title: s.title,
-            url: s.url,
-            source: s.source,
-            publishedAt: s.publishedAt,
-            imageUrl: s.imageUrl,
             oneLiner,
             bullets,
             sources,
           },
         },
-        upsert: true,
+        upsert: false,
       },
-    } satisfies SummaryOp;
+    };
   });
 
-  // Upsert summaries in bulk (requires unique index on summaries.id)
   let upserted = 0;
-  if (summaryOps.length && !dryRun) {
+  if (storyOps.length && !dryRun) {
     try {
-      const res = await summariesColl.bulkWrite(summaryOps, { ordered: false });
+      const res = await storiesColl.bulkWrite(storyOps, { ordered: false });
       upserted = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
     } catch (err) {
       const bulkErr = err as MongoBulkWriteError;

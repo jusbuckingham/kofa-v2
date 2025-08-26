@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
+import { getDb } from "@/lib/mongoClient";
 import { getServerSession } from "next-auth/next";
 import type { SubscriptionStatus } from "@/lib/constants";
 import { FREE_DAILY_STORY_LIMIT, todayUtcISO, todayUTC } from "@/lib/constants";
@@ -15,16 +15,16 @@ interface UserMetadataDoc {
   dailyCount: number;
   dailyDate: string; // YYYY-MM-DD
   subscriptionStatus: SubscriptionStatus;
+  canReadToday?: boolean;
 }
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   const userEmail = session.user.email;
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
+  const db = await getDb();
   const coll = db.collection<UserMetadataDoc>("user_metadata");
 
   let doc: WithId<UserMetadataDoc> | null = await coll.findOne({ userEmail });
@@ -41,21 +41,20 @@ export async function GET() {
     doc = { _id: insertResult.insertedId, ...newDoc };
   }
 
-  return NextResponse.json({ metadata: doc });
+  return NextResponse.json({ metadata: doc }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   const userEmail = session.user.email;
   const { incrementRead = false } = (await request.json()) as {
     incrementRead?: boolean;
   };
 
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB_NAME || "kofa");
+  const db = await getDb();
   const coll = db.collection<UserMetadataDoc>("user_metadata");
 
   const today = todayUtcISO();
@@ -111,5 +110,5 @@ export async function PATCH(request: Request) {
     }
   );
 
-  return NextResponse.json({ metadata: result.value });
+  return NextResponse.json({ metadata: result.value }, { headers: { "Cache-Control": "no-store" } });
 }

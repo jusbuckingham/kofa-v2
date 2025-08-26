@@ -1,114 +1,66 @@
 import { NextResponse } from "next/server";
-import { clientPromise } from "@/lib/mongoClient";
-
-// Lightweight shape of a summary we’ll return
-type SummaryProbe = {
-  id: string;
-  title: string;
-  source: string;
-  url?: string;
-  imageUrl?: string;
-  publishedAt?: string;
-  createdAt?: string;
-};
-
-type Counts = {
-  summaries: number;
-  favorites?: number;
-  userMetadata?: number;
-};
-
-type ProbeResponse = {
-  ok: boolean;
-  env: "development" | "production" | "test";
-  counts: Counts;
-  latest?: SummaryProbe | null;
-  note?: string;
-};
 
 export async function GET() {
-  // Safety guard: only respond if enabled (or not production)
+  // Only allow in non-prod or when explicitly enabled
   const nodeEnv = (process.env.NODE_ENV || "development") as
     | "development"
     | "production"
     | "test";
-  const debugEnabled =
-    nodeEnv !== "production" || process.env.DEBUG_ENABLE === "true";
+  const debugEnabled = nodeEnv !== "production" || process.env.DEBUG_ENABLE === "true";
 
   if (!debugEnabled) {
-    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
-  }
-
-  try {
-    const client = await clientPromise;
-    const db = client.db();
-
-    // Collections we care about
-    const summariesCol = db.collection("summaries");
-    const favoritesCol = db.collection("favorites");
-    const userMetaCol = db.collection("userMetadata");
-
-    // Counts
-    const [summariesCount, favoritesCount, userMetaCount] = await Promise.all([
-      summariesCol.countDocuments({}),
-      favoritesCol.countDocuments({}).catch(() => 0), // in case not present yet
-      userMetaCol.countDocuments({}).catch(() => 0),
-    ]);
-
-    // Latest summary (by createdAt fallback to publishedAt)
-    const latestDoc = await summariesCol
-      .find({})
-      .project({
-        _id: 0,
-        id: 1,
-        title: 1,
-        source: 1,
-        url: 1,
-        imageUrl: 1,
-        publishedAt: 1,
-        createdAt: 1,
-      })
-      .sort({ createdAt: -1, publishedAt: -1 })
-      .limit(1)
-      .next();
-
-    const latest: SummaryProbe | null = latestDoc
-      ? {
-          id: String(latestDoc.id ?? ""),
-          title: String(latestDoc.title ?? ""),
-          source: String(latestDoc.source ?? ""),
-          url: latestDoc.url ? String(latestDoc.url) : undefined,
-          imageUrl: latestDoc.imageUrl ? String(latestDoc.imageUrl) : undefined,
-          publishedAt: latestDoc.publishedAt
-            ? new Date(latestDoc.publishedAt).toISOString()
-            : undefined,
-          createdAt: latestDoc.createdAt
-            ? new Date(latestDoc.createdAt).toISOString()
-            : undefined,
-        }
-      : null;
-
-    const payload: ProbeResponse = {
-      ok: true,
-      env: nodeEnv,
-      counts: {
-        summaries: summariesCount,
-        favorites: favoritesCount,
-        userMetadata: userMetaCount,
-      },
-      latest,
-      note:
-        "If summaries=0, trigger POST /api/news/fetch once, then reload the homepage.",
-    };
-
-    return NextResponse.json(payload, { status: 200 });
-  } catch {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Debug probe failed",
-      },
-      { status: 500 }
+      { ok: false, error: "Not found" },
+      { status: 404, headers: { "Cache-Control": "no-store" } }
     );
   }
+
+  const keys = [
+    // Core
+    "MONGODB_URI",
+    "MONGODB_DB_NAME",
+    // OpenAI / summarization
+    "OPENAI_API_KEY",
+    "MAX_TO_SUMMARIZE",
+    "SUMMARY_MODEL",
+    "SUMMARY_FALLBACK_MODEL",
+    // News ingestion & ranking
+    "FEED_URLS",
+    "NEWS_LENS",
+    "NEWS_MIN_SCORE",
+    "NEWS_ALLOWLIST_ONLY",
+    "NEWS_BLACK_DOMAIN_BOOST",
+    // Cron/auth
+    "CRON_SECRET",
+    "ALLOW_FETCH_DRYRUN_PUBLIC",
+    // Public site / auth
+    "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_DEFAULT_LENS",
+    "NEXTAUTH_URL",
+    "NEXTAUTH_SECRET",
+  ];
+
+  const present: Record<string, boolean> = {};
+  for (const k of keys) {
+    present[k] = !!process.env[k] && String(process.env[k]!).trim().length > 0;
+  }
+
+  // Provide safe, non-sensitive hints
+  const feedUrls = (process.env.FEED_URLS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const hints = {
+    feedCount: feedUrls.length,
+    hasTrustedDefaultLens: (process.env.NEXT_PUBLIC_DEFAULT_LENS || "").length > 0,
+  };
+
+  return NextResponse.json(
+    {
+      ok: true,
+      env: nodeEnv,
+      present,
+      hints,
+      note:
+        "Values are not shown here. 'present' only indicates whether each variable is set."
+    },
+    { status: 200, headers: { "Cache-Control": "no-store" } }
+  );
 }

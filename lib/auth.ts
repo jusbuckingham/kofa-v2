@@ -1,20 +1,19 @@
 import type { NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
-import clientPromise from "@/lib/mongodb";
+import { clientPromise, getDb } from "@/lib/mongoClient";
 import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { stripe } from "@/lib/stripe";
 
-function getEnvVar(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Environment variable ${name} is required but was not provided.`);
-  }
-  return value;
+function getEnvVar(name: string, options?: { required?: boolean; default?: string }): string {
+  const val = process.env[name];
+  if (typeof val === 'string' && val.length > 0) return val;
+  if (options?.default !== undefined) return options.default;
+  if (options?.required === false) return '';
+  throw new Error(`Missing required env var: ${name}`);
 }
 
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME ?? "default_db_name";
 
 interface ExtendedJWT extends JWT {
   hasActiveSub?: boolean;
@@ -56,8 +55,7 @@ export const authOptions: NextAuthOptions = {
         return t;
       }
 
-      const client = await clientPromise;
-      const db = client.db(MONGODB_DB_NAME);
+      const db = await getDb();
       const coll = db.collection("user_metadata");
       const dbUser = await coll.findOne({ email });
 
@@ -82,8 +80,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           metadata: { email: user.email },
         });
-        const client = await clientPromise;
-        const db = client.db(MONGODB_DB_NAME);
+        const db = await getDb();
         await db
           .collection("user_metadata")
           .updateOne(

@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const token = rawAuth.startsWith("Bearer ") ? rawAuth.slice(7) : rawAuth.trim();
 
   if (!secret || token !== secret) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
@@ -22,8 +22,8 @@ export async function GET(request: Request) {
     const storiesCount = Array.isArray(result?.stories) ? result.stories.length : 0;
 
     // We avoid returning full story payloads from an admin fetch for safety and payload size.
-    return NextResponse.json({ ok: true, inserted, storiesCount }, { status: 200 });
+    return NextResponse.json({ ok: true, inserted, storiesCount }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: "Fetch failed", details: String(err) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Fetch failed", details: String(err) }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -30,19 +30,19 @@ export default async function summarizeWithPerspective(
   text: string
 ): Promise<{ oneLiner: string; bullets: string[] }> {
   if (!text || !text.trim()) {
-    return { oneLiner: "", bullets: ["", "", "", ""] };
+    return { oneLiner: "", bullets: ["", "", "", "", ""] };
   }
 
   const scrub = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
 
-  // Structured 4 bullets, JSON output
+  // Structured 5 bullets (Five Ws), JSON output
   const messages: Array<{ role: "system" | "user"; content: string }> = [
     {
       role: "system",
       content: `Extract a concise news summary as STRICT JSON. Return ONLY:
 {
   "oneLiner": string,
-  "bullets": string[4]
+  "bullets": string[5]
 }
 
 Voice & audience:
@@ -57,7 +57,7 @@ Do NOT:
 - Address the model (“As an AI…”) or include reasoning.
 
 Format rules:
-- "bullets" MUST be exactly 4 strings. Each stands alone like a tweet.
+- "bullets" MUST be exactly 5 strings (Five Ws: who, what, where, when, why). Each stands alone like a tweet.
 - Each bullet ≤ 120 characters total; prefer 90–120. Multiple short sentences allowed.
 - No labels like “Who/What/When/Why”; just the takeaway lines.
 - Each line must read as the source itself (no attribution language).
@@ -129,10 +129,10 @@ ${scrub(text)}`,
     const trimmed = onlyStrings
       .map((s) => enforce(stripNoisyMarks(deAttribute(s)), max))
       .filter((s) => s.length > 0);
-    // Ensure exactly 4 entries: slice if too long, pad with empty strings if too short
-    const four = trimmed.slice(0, 4);
-    while (four.length < 4) four.push("");
-    return four;
+    // Ensure exactly 5 entries: slice if too long, pad with empty strings if too short
+    const five = trimmed.slice(0, 5);
+    while (five.length < 5) five.push("");
+    return five;
   }
 
   function parseJsonLoose(raw: string): SummarizeResponse {
@@ -190,8 +190,8 @@ ${scrub(text)}`,
   const parsed = parseJsonLoose(raw);
   const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
   const bullets = normalizeBullets(safe.bullets);
-  while (bullets.length < 4) bullets.push("");
-  if (bullets.length > 4) bullets.splice(4);
+  while (bullets.length < 5) bullets.push("");
+  if (bullets.length > 5) bullets.splice(5);
   return {
     oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
     bullets,

@@ -4,13 +4,13 @@ import type { WithId } from "mongodb";
 import type { NewsStory } from "../app/types";
 
 const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB_NAME;
+const dbName = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB;
 
 if (!uri) {
   throw new Error("MONGODB_URI is not set");
 }
 if (!dbName) {
-  throw new Error("MONGODB_DB_NAME is not set");
+  throw new Error("MONGODB_DB_NAME (or MONGODB_DB) is not set");
 }
 
 // Use a global to prevent exhausting connections in dev:
@@ -49,7 +49,7 @@ export async function insertStoriesIntoMongo(
   // Deduplicate against what's already in the DB
   const urls = stories.map((s) => s.url);
   const existing = await collection
-    .find({ url: { $in: urls } })
+    .find({ url: { $in: urls } }, { projection: { _id: 1, url: 1 } })
     .toArray() as WithId<NewsStory>[];
   const existingUrlSet = new Set(existing.map((d) => d.url));
 
@@ -69,13 +69,26 @@ export async function insertStoriesIntoMongo(
           .toArray()) as WithId<NewsStory>[];
       }
     } catch (error) {
-      // If we still hit a duplicate due to a race, fetch what exists and continue
+      // If we still hit a duplicate due to a race or parallel run, compute how many ended up inserted
       if (error instanceof MongoServerError && error.code === 11000) {
-        const refreshed = (await collection
-          .find({ url: { $in: toInsert.map((s) => s.url) } })
+        // Re-read the subset (toInsert URLs) now present in the DB
+        const presentAfter = (await collection
+          .find({ url: { $in: toInsert.map((s) => s.url) } }, { projection: { _id: 1, url: 1 } })
           .toArray()) as WithId<NewsStory>[];
-        insertedDocs = refreshed;
-        insertedCount = refreshed.length; // best effort accounting
+
+        // Of those, how many were already present before we tried to insert?
+        const toInsertUrlSet = new Set(toInsert.map((s) => s.url));
+        const preExistingAmongToInsert = existing.filter((d) => toInsertUrlSet.has(d.url)).length;
+        const presentCount = presentAfter.length;
+
+        // Newly inserted this call ≈ present now minus those that existed before among this subset
+        insertedCount = Math.max(0, presentCount - preExistingAmongToInsert);
+
+        // Optionally fetch full docs for the newly inserted subset; but keep prior behavior of returning
+        // the combined docs. Here we just fetch the present subset to merge later.
+        insertedDocs = (await collection
+          .find({ _id: { $in: presentAfter.map((d) => d._id) } })
+          .toArray()) as WithId<NewsStory>[];
       } else {
         throw error;
       }
@@ -83,6 +96,7 @@ export async function insertStoriesIntoMongo(
   }
 
   // Return combined: existing + newly inserted (unique by URL)
+  // Note: insertedCount reflects the number of *new* stories added by this call (best-effort under concurrency).
   const combinedByUrl = new Map<string, WithId<NewsStory>>();
   for (const doc of existing) combinedByUrl.set(doc.url, doc);
   for (const doc of insertedDocs) combinedByUrl.set(doc.url, doc);

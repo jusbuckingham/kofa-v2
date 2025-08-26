@@ -1,10 +1,10 @@
 /**
  * lib/fetchNews.ts
- * Aggregates news from external providers (NewsData → fallback GNews),
+ * Aggregates news from external providers (NewsData → GNews → RSS fallback),
  * summarizes with Kofa's perspective, and stores in MongoDB.
  */
 
-import clientPromise from "@/lib/mongodb";
+import { getDb } from "@/lib/mongoClient";
 import summarizeWithPerspective from "@/lib/summarize";
 import { fetchNewsData } from "@/lib/providers/newsdata";
 import { fetchGNews } from "@/lib/providers/gnews";
@@ -197,6 +197,7 @@ const TRUSTED_DOMAINS = new Set(
   ].map((d) => d.toLowerCase())
 );
 
+
 const BLACK_PUBLISHER_DOMAINS = new Set(
   [
     "thegrio.com",
@@ -215,6 +216,12 @@ const BLACK_PUBLISHER_DOMAINS = new Set(
     "washingtoninformer.com",
   ].map((d) => d.toLowerCase())
 );
+
+function isTrustedOrBlackDomain(domain?: string): boolean {
+  if (!domain) return false;
+  const d = domain.toLowerCase();
+  return TRUSTED_DOMAINS.has(d) || BLACK_PUBLISHER_DOMAINS.has(d);
+}
 
 const BLACK_PATTERNS: RegExp[] = [
   /\bblack\b/i,
@@ -291,9 +298,7 @@ export interface StoryDoc {
  * Then summarize + store new stories.
  */
 export async function fetchNewsFromSource(): Promise<{ inserted: number; stories: StoryDoc[] }> {
-  const client = await clientPromise;
-  const dbName = process.env.MONGODB_DB_NAME ?? process.env.mongodb_db_name ?? "kofa";
-  const db = client.db(dbName);
+  const db = await getDb();
   const storiesCol = db.collection<StoryDoc>("stories");
 
   const seen = new Set<string>();
@@ -440,8 +445,12 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     if (exists) continue;
 
     const textToSummarize = `${c.title ?? ""}\n\n${c.description ?? ""}`.trim();
+    const compactLen = textToSummarize.replace(/\s+/g, "").length;
+    const domain = getDomain(c.url);
     // Minimum body length to avoid summarizing ads/stubs
-    if (!textToSummarize || textToSummarize.replace(/\s+/g, "").length < 500) {
+    // Use a lower threshold for trusted or Black-focused outlets.
+    const minLen = isTrustedOrBlackDomain(domain) ? 160 : 280;
+    if (!textToSummarize || compactLen < minLen) {
       continue;
     }
 

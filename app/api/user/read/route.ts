@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       summariesToday: 0,
       limit: FREE_SUMMARIES_PER_DAY,
       allowed: true,
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   try {
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ...res,
       limit: FREE_SUMMARIES_PER_DAY,
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     console.error('[user/read GET] quota error:', err);
     return NextResponse.json(
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
         limit: FREE_SUMMARIES_PER_DAY,
         error: 'internal_error',
       },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   }
 
   let increment = true;
@@ -78,16 +78,16 @@ export async function POST(req: NextRequest) {
           message: `Free quota of ${FREE_SUMMARIES_PER_DAY} summaries per day reached.`,
           limit: FREE_SUMMARIES_PER_DAY,
         },
-        { status: 402 }
+        { status: 402, headers: { 'Cache-Control': 'no-store' } }
       );
     }
 
     return NextResponse.json({
       ...res,
       limit: FREE_SUMMARIES_PER_DAY,
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     console.error('[user/read POST] quota error:', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return NextResponse.json({ error: 'internal_error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
