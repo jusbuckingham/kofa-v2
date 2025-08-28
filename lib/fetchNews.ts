@@ -21,6 +21,20 @@ const MIN_LEN_DEFAULT = Number.isFinite(NEWS_MIN_LEN) ? NEWS_MIN_LEN : 120;
 const MIN_LEN_TRUSTED_DEFAULT = Number.isFinite(NEWS_MIN_LEN_TRUSTED) ? NEWS_MIN_LEN_TRUSTED : 80;
 const NEWS_MAX_TO_SUMMARIZE = Number.isFinite(NEWS_MAX_TO_SUMMARIZE_ENV) ? NEWS_MAX_TO_SUMMARIZE_ENV : 150;
 
+// RSS fetch headers (some hosts block default fetchers)
+const RSS_USER_AGENT = process.env.RSS_USER_AGENT || "KofaBot/1.0 (+https://www.kofa.ai)";
+const RSS_ACCEPT = "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8";
+
+async function fetchWithUA(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      "User-Agent": RSS_USER_AGENT,
+      Accept: RSS_ACCEPT,
+    },
+    cache: "no-store",
+  });
+}
+
 // Hard blocks we always keep (even in relaxed mode): PR wires
 const HARD_BLOCKED_DOMAINS = new Set<string>([
   "prnewswire.com",
@@ -139,12 +153,23 @@ function parseAtom(xml: string): Array<{ title?: string; url?: string; descripti
 
 async function fetchRssFeed(url: string): Promise<ReturnType<typeof parseRss>> {
   try {
-    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": "KofaBot/1.0 (+https://www.kofa.ai)" } });
-    if (!res.ok) return [];
+    if (NEWS_DEBUG) console.log("[fetchNews][rss] GET", url);
+    const res = await fetchWithUA(url);
+    if (!res.ok) {
+      if (NEWS_DEBUG) console.warn("[fetchNews][rss] non-200", url, res.status);
+      return [];
+    }
     const xml = await res.text();
+    if (!xml || xml.length < 40) {
+      if (NEWS_DEBUG) console.warn("[fetchNews][rss] empty/short body", url);
+      return [];
+    }
     const isAtom = /<feed\b/i.test(xml) && /<entry\b/i.test(xml);
-    return isAtom ? parseAtom(xml) : parseRss(xml);
-  } catch {
+    const parsed = isAtom ? parseAtom(xml) : parseRss(xml);
+    if (NEWS_DEBUG) console.log("[fetchNews][rss] parsed items", url, parsed.length);
+    return parsed;
+  } catch (err) {
+    if (NEWS_DEBUG) console.error("[fetchNews][rss] error", url, String(err));
     return [];
   }
 }
@@ -399,7 +424,10 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
 
   // 3) Fallback: RSS feeds (FEED_URLS or built-in defaults)
   if (candidates.length === 0) {
-    const feedsEnv = (process.env.FEED_URLS || "").split(",").map(s => s.trim()).filter(Boolean);
+    const feedsEnv = (process.env.FEED_URLS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => /^https?:/i.test(s));
     const defaultFeeds = [
       // Top/General
       "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
@@ -416,7 +444,7 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     ];
     const feeds = feedsEnv.length ? feedsEnv : defaultFeeds;
     const rssResults: typeof candidates = [];
-    for (const f of feeds.slice(0, 8)) { // slightly wider safety bound
+    for (const f of feeds.slice(0, 20)) { // consider more feeds; rate-limited by per-run caps
       const items = await fetchRssFeed(f);
       for (const it of items) {
         const url = normalizeUrl(it.url);
@@ -430,7 +458,7 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
           imageUrl: it.imageUrl,
         });
       }
-      if (rssResults.length > 120) break; // higher cap
+      if (rssResults.length > 180) break; // allow a bit more before scoring
     }
     if (rssResults.length) {
       candidates.push(...rssResults);
@@ -514,9 +542,13 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     let s: { oneLiner?: string; bullets?: string[] } = {};
     try {
       s = await summarizeWithPerspective(textToSummarize);
-    } catch {
-      // Skip items that fail to summarize
-      continue;
+    } catch (err) {
+      if (NEWS_DEBUG) console.error('[fetchNews] summarize failed', { url: c.url, title: c.title, err: String(err) });
+      if (!NEWS_RELAX) {
+        continue; // strict mode: skip
+      }
+      // relax mode: proceed with title-only summary and empty bullets
+      s = { oneLiner: c.title ?? "", bullets: ["", "", "", "", ""] };
     }
 
     const summary = {
