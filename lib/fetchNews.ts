@@ -629,10 +629,10 @@ export async function fetchNewsFromSource(): Promise<{
       };
 
       const updateDoc: UpdateFilter<StoryDoc> & {
-        $setOnInsert: { id: string; createdAt: Date };
+        $setOnInsert: { createdAt: Date };
       } = {
-        $set: setPayload,
-        $setOnInsert: { id: doc.id, createdAt: doc.createdAt },
+        $set: setPayload, // NOTE: `setPayload` already contains `id`
+        $setOnInsert: { createdAt: doc.createdAt }, // do NOT include `id` here to avoid path conflict
       };
 
       const res = await storiesCol.updateOne(
