@@ -20,6 +20,10 @@ const NEWS_MAX_TO_SUMMARIZE_ENV = Number.parseInt(process.env.NEWS_MAX_TO_SUMMAR
 const MIN_LEN_DEFAULT = Number.isFinite(NEWS_MIN_LEN) ? NEWS_MIN_LEN : 120;
 const MIN_LEN_TRUSTED_DEFAULT = Number.isFinite(NEWS_MIN_LEN_TRUSTED) ? NEWS_MIN_LEN_TRUSTED : 80;
 const NEWS_MAX_TO_SUMMARIZE = Number.isFinite(NEWS_MAX_TO_SUMMARIZE_ENV) ? NEWS_MAX_TO_SUMMARIZE_ENV : 150;
+const NEWS_UPDATE_EXISTING =
+  process.env.NEWS_UPDATE_EXISTING === "1" ||
+  process.env.NEWS_UPDATE_EXISTING === "true" ||
+  process.env.NEWS_UPDATE_EXISTING === undefined; // default on
 
 // RSS fetch headers (some hosts block default fetchers)
 const RSS_USER_AGENT = process.env.RSS_USER_AGENT || "KofaBot/1.0 (+https://www.kofa.ai)";
@@ -357,11 +361,15 @@ export interface StoryDoc {
  * Fetch from NewsData first; if it fails or returns nothing, fall back to GNews.
  * Then summarize + store new stories.
  */
-export async function fetchNewsFromSource(): Promise<{ inserted: number; stories: StoryDoc[] }> {
+export async function fetchNewsFromSource(): Promise<{
+  inserted: number;
+  stories: StoryDoc[];
+  debug: { fetched: number; afterHard: number; afterFilters: number; toSummarize: number; inserted: number; modified: number; matched: number };
+}> {
   const db = await getDb();
   const storiesCol = db.collection<StoryDoc>("stories");
 
-  const debug = { fetched: 0, afterHard: 0, afterFilters: 0, toSummarize: 0, inserted: 0 };
+  const debug = { fetched: 0, afterHard: 0, afterFilters: 0, toSummarize: 0, inserted: 0, modified: 0, matched: 0 };
 
   const seen = new Set<string>();
   const candidates: Array<{
@@ -469,7 +477,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   if (NEWS_DEBUG) console.log("[fetchNews] fetched candidates:", debug.fetched);
 
   if (candidates.length === 0) {
-    return { inserted: 0, stories: [] };
+    if (NEWS_DEBUG) console.log("[fetchNews] counters:", debug);
+    return { inserted: 0, stories: [], debug };
   }
 
   // Stage 1: hard filters only (always enforced)
@@ -501,7 +510,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   if (NEWS_DEBUG) console.log("[fetchNews] after soft filters:", debug.afterFilters);
 
   if (filteredCandidates.length === 0) {
-    return { inserted: 0, stories: [] };
+    if (NEWS_DEBUG) console.log("[fetchNews] counters:", debug);
+    return { inserted: 0, stories: [], debug };
   }
 
   // Lens tuning to match API route (env-driven)
@@ -524,11 +534,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   if (NEWS_DEBUG) console.log("[fetchNews] to summarize:", debug.toSummarize);
 
   // De-dupe against DB and summarize
-  const toInsert: StoryDoc[] = [];
+  const processedDocs: StoryDoc[] = [];
   for (const c of worklist) {
-    // Skip if already ingested
-    const exists = await storiesCol.findOne({ url: c.url });
-    if (exists) continue;
 
     const textToSummarize = `${c.title ?? ""}\n\n${c.description ?? ""}`.trim();
     const compactLen = textToSummarize.replace(/\s+/g, "").length;
@@ -578,34 +585,43 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
       ],
     };
 
-    toInsert.push(doc);
-  }
-
-  let inserted = 0;
-  const insertedDocs: StoryDoc[] = [];
-
-  if (toInsert.length) {
-    try {
-      const res = await storiesCol.insertMany(toInsert, { ordered: false });
-      inserted = res.insertedCount || 0;
-      insertedDocs.push(...toInsert);
-    } catch {
-      // If duplicate race conditions occur, try one-by-one
-      for (const d of toInsert) {
-        try {
-          await storiesCol.insertOne(d);
-          inserted++;
-          insertedDocs.push(d);
-        } catch {
-          // ignore dupes
-        }
+    if (NEWS_UPDATE_EXISTING) {
+      const res = await storiesCol.updateOne(
+        { url: doc.url },
+        {
+          $set: {
+            title: doc.title,
+            url: doc.url,
+            imageUrl: doc.imageUrl,
+            source: doc.source,
+            publishedAt: doc.publishedAt,
+            oneLiner: doc.summary.oneLiner,
+            bullets: doc.summary.bullets,
+            summary: doc.summary,
+            sources: doc.sources,
+            updatedAt: new Date(),
+          },
+          $setOnInsert: { createdAt: doc.createdAt },
+        },
+        { upsert: true }
+      );
+      debug.inserted += res.upsertedCount || 0;
+      debug.modified += res.modifiedCount || 0;
+      debug.matched += res.matchedCount || 0;
+    } else {
+      // Insert-only mode (legacy)
+      try {
+        await storiesCol.insertOne(doc);
+        debug.inserted += 1;
+      } catch {
+        // ignore dupes
       }
     }
+    processedDocs.push(doc);
   }
-  debug.inserted = inserted;
-  if (NEWS_DEBUG) console.log("[fetchNews] inserted:", debug.inserted);
 
-  return { inserted, stories: insertedDocs };
+  if (NEWS_DEBUG) console.log("[fetchNews] counters:", debug);
+  return { inserted: debug.inserted, stories: processedDocs, debug };
 }
 
 export default fetchNewsFromSource;

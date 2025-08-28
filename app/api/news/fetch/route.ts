@@ -2,13 +2,21 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 // app/api/news/fetch/route.ts
 import { NextResponse } from "next/server";
-import fetchNewsFromSource from "@/lib/fetchNews";
+import { fetchNewsFromSource } from "@/lib/fetchNews";
 
 // Minimal shape returned by lib/fetchNews
 type FetchResult = {
   inserted: number;
   stories: Array<{ source?: string }>;
-  debug?: unknown;
+  debug?: {
+    fetched: number;
+    afterHard: number;
+    afterFilters: number;
+    toSummarize: number;
+    inserted: number;
+    modified: number;
+    matched: number;
+  };
 };
 
 export async function GET(request: Request) {
@@ -43,6 +51,7 @@ export async function GET(request: Request) {
   const result = await fetchNewsFromSource();
   // Expected to include: { inserted, stories, debug? }
   const { inserted = 0, stories = [], debug: metaDebug } = (result as FetchResult);
+  const affected = inserted + (metaDebug?.modified ?? 0);
 
   return NextResponse.json(
     {
@@ -51,6 +60,7 @@ export async function GET(request: Request) {
       upsertedSummaries: 0,
       count: stories.length,
       totalFetched: stories.length,
+      affected,
       meta: includeMeta ? { debug: metaDebug } : undefined,
     },
     { status: 200, headers: { "Cache-Control": "no-store" } }
