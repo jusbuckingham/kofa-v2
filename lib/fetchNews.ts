@@ -9,6 +9,41 @@ import summarizeWithPerspective from "@/lib/summarize";
 import { fetchNewsData } from "@/lib/providers/newsdata";
 import { fetchGNews } from "@/lib/providers/gnews";
 
+// ---- Ingestion tuning knobs (env-driven) ----
+const NEWS_RELAX = process.env.NEWS_RELAX === "1" || process.env.NEWS_RELAX === "true";
+const NEWS_DEBUG = process.env.NEWS_DEBUG === "1" || process.env.NEWS_DEBUG === "true";
+const NEWS_MIN_LEN = Number.parseInt(process.env.NEWS_MIN_LEN || "", 10);
+const NEWS_MIN_LEN_TRUSTED = Number.parseInt(process.env.NEWS_MIN_LEN_TRUSTED || "", 10);
+const NEWS_MAX_TO_SUMMARIZE_ENV = Number.parseInt(process.env.NEWS_MAX_TO_SUMMARIZE || "", 10);
+
+// relaxed defaults if env not set
+const MIN_LEN_DEFAULT = Number.isFinite(NEWS_MIN_LEN) ? NEWS_MIN_LEN : 120;
+const MIN_LEN_TRUSTED_DEFAULT = Number.isFinite(NEWS_MIN_LEN_TRUSTED) ? NEWS_MIN_LEN_TRUSTED : 80;
+const NEWS_MAX_TO_SUMMARIZE = Number.isFinite(NEWS_MAX_TO_SUMMARIZE_ENV) ? NEWS_MAX_TO_SUMMARIZE_ENV : 150;
+
+// Hard blocks we always keep (even in relaxed mode): PR wires
+const HARD_BLOCKED_DOMAINS = new Set<string>([
+  "prnewswire.com",
+  "businesswire.com",
+  "globenewswire.com",
+  "newswire.com",
+]);
+
+// URL paths that are almost certainly press/sponsored
+const URL_HARD_JUNK: RegExp[] = [
+  /\/press(-|_)?release\//i,
+  /\/sponsored\//i,
+];
+
+function isHardBlocked(domain?: string) {
+  return !!domain && HARD_BLOCKED_DOMAINS.has(domain.toLowerCase());
+}
+
+function looksJunkRelaxed(title?: string, description?: string): boolean {
+  const s = `${title || ""} ${description || ""}`;
+  return /(press release|press-release|sponsored)/i.test(s);
+}
+
 // ---------- Helpers ----------
 function getDomain(u?: string): string {
   try {
@@ -301,6 +336,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   const db = await getDb();
   const storiesCol = db.collection<StoryDoc>("stories");
 
+  const debug = { fetched: 0, afterHard: 0, afterFilters: 0, toSummarize: 0, inserted: 0 };
+
   const seen = new Set<string>();
   const candidates: Array<{
     title: string;
@@ -400,20 +437,40 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     }
   }
 
+  debug.fetched = candidates.length;
+  if (NEWS_DEBUG) console.log("[fetchNews] fetched candidates:", debug.fetched);
+
   if (candidates.length === 0) {
     return { inserted: 0, stories: [] };
   }
 
-  // Filter out junk/PR domains, sponsored/ads, and stale items (older than 72h)
-  const filteredCandidates = candidates.filter((c) => {
+  // Stage 1: hard filters only (always enforced)
+  const afterHard = candidates.filter((c) => {
     const domain = getDomain(c.url).toLowerCase();
     if (!c.url || !domain) return false;
-    if (BLOCKED_DOMAINS.has(domain)) return false;
-    if (looksJunk(c.title, c.description)) return false;
-    if (URL_JUNK_PATTERNS.some((rx) => rx.test(c.url))) return false;
-    // If publishedAt present, enforce freshness; if missing, allow (120h)
-    return !c.publishedAt || isRecent(c.publishedAt, 120);
+    if (isHardBlocked(domain)) return false; // PR wires
+    if (URL_HARD_JUNK.some((rx) => rx.test(c.url))) return false; // press/sponsored paths
+    return true;
   });
+  debug.afterHard = afterHard.length;
+  if (NEWS_DEBUG) console.log("[fetchNews] after hard filters:", debug.afterHard);
+
+  // Stage 2: relaxed vs strict content/freshness filters
+  const filteredCandidates = afterHard.filter((c) => {
+    const domain = getDomain(c.url).toLowerCase();
+    if (!NEWS_RELAX) {
+      if (BLOCKED_DOMAINS.has(domain)) return false;
+      if (looksJunk(c.title, c.description)) return false;
+      if (URL_JUNK_PATTERNS.some((rx) => rx.test(c.url))) return false;
+      return !c.publishedAt || isRecent(c.publishedAt, 120);
+    } else {
+      // Relaxed: only very light junk screen, allow up to 7 days freshness window
+      if (looksJunkRelaxed(c.title, c.description)) return false;
+      return !c.publishedAt || isRecent(c.publishedAt, 168);
+    }
+  });
+  debug.afterFilters = filteredCandidates.length;
+  if (NEWS_DEBUG) console.log("[fetchNews] after soft filters:", debug.afterFilters);
 
   if (filteredCandidates.length === 0) {
     return { inserted: 0, stories: [] };
@@ -434,8 +491,9 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
   scored.sort((a, b) => b.__score - a.__score);
 
   // Soft cap to protect token spend
-  const MAX_TO_SUMMARIZE = Number(process.env.MAX_TO_SUMMARIZE || 80);
-  const worklist = scored.slice(0, Math.max(1, Math.min(200, MAX_TO_SUMMARIZE)));
+  const worklist = scored.slice(0, Math.max(1, Math.min(200, NEWS_MAX_TO_SUMMARIZE)));
+  debug.toSummarize = worklist.length;
+  if (NEWS_DEBUG) console.log("[fetchNews] to summarize:", debug.toSummarize);
 
   // De-dupe against DB and summarize
   const toInsert: StoryDoc[] = [];
@@ -447,10 +505,9 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
     const textToSummarize = `${c.title ?? ""}\n\n${c.description ?? ""}`.trim();
     const compactLen = textToSummarize.replace(/\s+/g, "").length;
     const domain = getDomain(c.url);
-    // Minimum body length to avoid summarizing ads/stubs
-    // Use a lower threshold for trusted or Black-focused outlets.
-    const minLen = isTrustedOrBlackDomain(domain) ? 160 : 280;
-    if (!textToSummarize || compactLen < minLen) {
+    // Lower thresholds, env-driven; in relax mode we allow short bodies (title-only)
+    const minLen = isTrustedOrBlackDomain(domain) ? MIN_LEN_TRUSTED_DEFAULT : MIN_LEN_DEFAULT;
+    if ((!textToSummarize || compactLen < minLen) && !NEWS_RELAX) {
       continue;
     }
 
@@ -513,6 +570,8 @@ export async function fetchNewsFromSource(): Promise<{ inserted: number; stories
       }
     }
   }
+  debug.inserted = inserted;
+  if (NEWS_DEBUG) console.log("[fetchNews] inserted:", debug.inserted);
 
   return { inserted, stories: insertedDocs };
 }

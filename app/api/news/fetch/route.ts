@@ -5,7 +5,43 @@ import { NextResponse } from "next/server";
 import fetchNewsFromSource from "@/lib/fetchNews";
 import { getDb } from "@/lib/mongoClient";
 import { MongoBulkWriteError } from "mongodb";
+
 import summarizeWithPerspective from "@/lib/summarize";
+
+// ---- Ingestion tuning knobs (env-driven) ----
+const NEWS_RELAX = process.env.NEWS_RELAX === "1" || process.env.NEWS_RELAX === "true";
+const NEWS_DEBUG = process.env.NEWS_DEBUG === "1" || process.env.NEWS_DEBUG === "true";
+const NEWS_MIN_LEN = Number.parseInt(process.env.NEWS_MIN_LEN || "", 10);
+const NEWS_MIN_LEN_TRUSTED = Number.parseInt(process.env.NEWS_MIN_LEN_TRUSTED || "", 10);
+
+// relaxed defaults if env not set
+const MIN_LEN_DEFAULT = Number.isFinite(NEWS_MIN_LEN) ? NEWS_MIN_LEN : 120;
+const MIN_LEN_TRUSTED_DEFAULT = Number.isFinite(NEWS_MIN_LEN_TRUSTED) ? NEWS_MIN_LEN_TRUSTED : 80;
+
+// Hard blocks we always keep (even in relaxed mode): PR wires
+const HARD_BLOCKED_DOMAINS = new Set<string>([
+  "prnewswire.com",
+  "businesswire.com",
+  "globenewswire.com",
+  "newswire.com",
+]);
+
+// URL paths that are almost certainly press/sponsored (always block)
+const URL_HARD_JUNK: RegExp[] = [
+  /\/press(-|_)?release\//i,
+  /\/sponsored\//i,
+];
+
+function looksJunkRelaxed(title?: string, description?: string): boolean {
+  const s = `${title || ""} ${description || ""}`;
+  return /(press release|press-release|sponsored)/i.test(s);
+}
+
+function isTrustedOrBlackDomain(domain?: string) {
+  if (!domain) return false;
+  const d = domain.toLowerCase();
+  return TRUSTED_DOMAINS.has(d) || BLACK_PUBLISHER_DOMAINS.has(d);
+}
 
 /** Raw shape coming back from feeds/parsers */
 type IngestStory = {
@@ -355,9 +391,24 @@ export async function GET(request: Request) {
   // Force the loose feed shape into our local ingest type so downstream
   // filtering/normalization can reference optional fields safely.
   const fetchedRaw = stories as unknown as IngestStory[];
+  const debug = { fetched: 0, afterHard: 0, afterFilters: 0, toSummarize: 0, inserted: 0 };
+  debug.fetched = fetchedRaw.length;
+  if (NEWS_DEBUG) console.log("[fetch route] fetched:", debug.fetched);
 
-  // Apply in-memory filters to fetched items
-  let filtered: IngestStory[] = fetchedRaw.filter((s) => {
+  // Stage 1: hard filters only (always enforced)
+  const afterHard: IngestStory[] = (fetchedRaw || []).filter((s) => {
+    const url = s.url || s.link || "";
+    const domainFull = toDomain(url);
+    if (!url || !domainFull) return false;
+    if (HARD_BLOCKED_DOMAINS.has(domainFull.toLowerCase())) return false; // PR wires
+    if (URL_HARD_JUNK.some((rx) => rx.test(url))) return false; // sponsored/press paths
+    return true;
+  });
+  debug.afterHard = afterHard.length;
+  if (NEWS_DEBUG) console.log("[fetch route] afterHard:", debug.afterHard);
+
+  // Stage 2: relaxed vs strict content/freshness filters
+  let filtered: IngestStory[] = afterHard.filter((s) => {
     const url = s.url || s.link || "";
     const domainFull = toDomain(url);
     const domain = (s.source || domainFull).toLowerCase();
@@ -365,23 +416,32 @@ export async function GET(request: Request) {
     const title = s.title || s.headline || "";
     const body = s.content || s.description || s.snippet || s.excerpt || "";
 
-    // Block known junk/PR domains
-    if (domainFull && BLOCKED_DOMAINS.has(domainFull.toLowerCase())) return false;
+    if (!NEWS_RELAX) {
+      if (BLOCKED_DOMAINS.has(domainFull.toLowerCase())) return false;
+      if (looksJunk(title, body)) return false;
+      if (URL_JUNK_PATTERNS.some((rx) => rx.test(url))) return false;
+      // strict: 120h freshness
+      const timeOk = (!pub) || isRecent(pub as string | Date, 120);
+      if (!timeOk) return false;
+    } else {
+      // relaxed: only very light junk screen, allow up to 7 days (168h)
+      if (looksJunkRelaxed(title, body)) return false;
+      const timeOk = (!pub) || isRecent(pub as string | Date, 168);
+      if (!timeOk) return false;
+    }
 
-    // Basic text-based junk detection
-    if (looksJunk(title, body)) return false;
-    if (URL_JUNK_PATTERNS.some((rx) => rx.test(url))) return false;
+    // optional source filter
+    const sourceOk = !wantedSources || wantedSources.some((ws) => domain.includes(ws) || url.toLowerCase().includes(ws));
+    if (!sourceOk) return false;
 
-    // Respect optional from/to filters AND enforce 120h freshness window
-    const timeOk = withinRange(pub as string | Date) && isRecent(pub as string | Date, 120);
-
-    const sourceOk =
-      !wantedSources || wantedSources.some((ws) => domain.includes(ws) || url.toLowerCase().includes(ws));
-
-    const qOk = matchesQuery(title, body);
-
-    return sourceOk && timeOk && qOk;
+    // optional text query
+    if (!matchesQuery(title, body)) return false;
+    // optional explicit date range filter from query
+    if (!withinRange(pub as string | Date | undefined)) return false;
+    return true;
   });
+  debug.afterFilters = filtered.length;
+  if (NEWS_DEBUG) console.log("[fetch route] afterFilters:", debug.afterFilters);
 
   // Lens-based scoring and ordering
   const scored = filtered.map((s) => {
@@ -468,6 +528,8 @@ export async function GET(request: Request) {
       }
     }
   }
+  debug.inserted = insertedCount;
+  if (NEWS_DEBUG) console.log("[fetch route] inserted stories:", debug.inserted);
 
   // Build summaries for each story and persist **inside** the `stories` collection
   type StoryUpdateOp = {
@@ -486,7 +548,9 @@ export async function GET(request: Request) {
     let oneLiner = s.title;
     let bullets: string[] = ["", "", "", "", ""];
 
-    if (compactLen >= 280) {
+    const domain = toDomain(s.url);
+    const minLen = isTrustedOrBlackDomain(domain) ? MIN_LEN_TRUSTED_DEFAULT : MIN_LEN_DEFAULT;
+    if (NEWS_RELAX || compactLen >= minLen) {
       try {
         const ai = await summarizeWithPerspective(body);
         oneLiner = (ai.oneLiner || s.title).trim();
@@ -556,6 +620,7 @@ export async function GET(request: Request) {
         ? {
             sources: distinctSources,
             latestPublishedAt: latestPublishedAt ? latestPublishedAt.toISOString() : null,
+            debug: NEWS_DEBUG ? debug : undefined,
           }
         : undefined,
     },
