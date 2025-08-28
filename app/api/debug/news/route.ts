@@ -1,24 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: Request) {
-  // Only allow in non-prod or when explicitly enabled
-  const nodeEnv = (process.env.NODE_ENV || "development") as
-    | "development"
-    | "production"
-    | "test";
-  const debugEnabled = nodeEnv !== "production" || process.env.DEBUG_ENABLE === "true";
+export async function GET(req: NextRequest) {
+  // Parse query params first so we can allow a safe env view even in prod
+  const stage = req.nextUrl.searchParams.get("stage") || "";
 
-  if (!debugEnabled) {
-    return NextResponse.json(
-      { ok: false, error: "Not found" },
-      { status: 404, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-
-  // Parse query params
-  const { searchParams } = new URL(req.url);
-  const stage = searchParams.get("stage") || "";
-
+  // Safe env presence view (allowed in prod): shows only presence and a small sample
   if (stage === "env") {
     const raw = process.env.FEED_URLS || "";
     const feeds = raw.split(",").map((s) => s.trim()).filter((s) => /^https?:/i.test(s));
@@ -34,13 +20,19 @@ export async function GET(req: Request) {
     } as const;
 
     return NextResponse.json(
-      {
-        ok: true,
-        present,
-        feedCount: feeds.length,
-        feedsSample: feeds.slice(0, 5),
-      },
+      { ok: true, present, feedCount: feeds.length, feedsSample: feeds.slice(0, 5) },
       { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  // Only allow other debug stages in non-prod or when explicitly enabled
+  const nodeEnv = (process.env.NODE_ENV || "development") as "development" | "production" | "test";
+  const debugEnabled = nodeEnv !== "production" || process.env.DEBUG_ENABLE === "true";
+
+  if (!debugEnabled) {
+    return NextResponse.json(
+      { ok: false, error: "Not found" },
+      { status: 404, headers: { "Cache-Control": "no-store" } }
     );
   }
 
