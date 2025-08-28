@@ -547,6 +547,9 @@ export async function GET(request: Request) {
     const compactLen = (body || "").replace(/\s+/g, "").length;
     let oneLiner = s.title;
     let bullets: string[] = ["", "", "", "", ""];
+    if (!oneLiner || !oneLiner.trim()) {
+      oneLiner = (s.title || "").trim();
+    }
 
     const domain = toDomain(s.url);
     const minLen = isTrustedOrBlackDomain(domain) ? MIN_LEN_TRUSTED_DEFAULT : MIN_LEN_DEFAULT;
@@ -558,7 +561,14 @@ export async function GET(request: Request) {
         const normalizedBullets = rawB.slice(0, 5);
         while (normalizedBullets.length < 5) normalizedBullets.push("");
         bullets = normalizedBullets.map((b) => clampBullet(b, 120));
-      } catch {
+      } catch (err) {
+        if (process.env.NEWS_DEBUG === '1' || process.env.NEWS_DEBUG === 'true') {
+          console.error('[fetch route] summarize failed', {
+            url: s.url,
+            title: s.title,
+            err: String(err),
+          });
+        }
         // keep defaults
       }
     }
@@ -572,6 +582,7 @@ export async function GET(request: Request) {
           $set: {
             oneLiner,
             bullets,
+            summary: { oneLiner, bullets },
             sources,
           },
         },
