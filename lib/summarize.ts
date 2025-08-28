@@ -128,6 +128,33 @@ ${scrub(text)}`,
     return base + "…";
   }
 
+  // Naive sentence splitter, tuned for newsy prose
+  function splitSentences(str: string): string[] {
+    if (!str) return [];
+    // Normalize whitespace and split on period/question/exclamation followed by space/newline
+    const cleaned = str.replace(/\s+/g, " ").trim();
+    const parts = cleaned
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    return parts;
+  }
+
+  // Heuristic bullets from the raw text (used when model bullets are empty)
+  function heuristicBulletsFromText(src: string, max = 120): string[] {
+    const sents = splitSentences(scrub(src));
+    const picks: string[] = [];
+    for (const s of sents) {
+      const line = enforce(stripNoisyMarks(deAttribute(s)), max);
+      if (line && line.length > 0 && !picks.includes(line)) {
+        picks.push(line);
+      }
+      if (picks.length >= 5) break;
+    }
+    while (picks.length < 5) picks.push("");
+    return picks.slice(0, 5);
+  }
+
   function normalizeBullets(input: unknown, max = 120): string[] {
     const arr = Array.isArray(input)
       ? input
@@ -217,12 +244,31 @@ ${scrub(text)}`,
   const raw = response.choices[0].message.content ?? "";
   const parsed = parseJsonLoose(raw);
   const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
-  const bullets = normalizeBullets(safe.bullets);
-  if (!bullets.some((b) => b && b.length)) {
-    if (SUMMARY_DEBUG) console.error("[summarize] empty bullets; raw=", raw?.slice(0, 200));
+  let bullets = normalizeBullets(safe.bullets);
+  const hadAny = bullets.some((b) => b && b.length);
+  if (!hadAny) {
+    if (SUMMARY_DEBUG) {
+      console.error("[summarize] empty bullets; raw=", raw?.slice(0, 300));
+      try { console.error("[summarize] parsed=", JSON.stringify(safe).slice(0, 300)); } catch {}
+    }
+    bullets = heuristicBulletsFromText(text, 120);
+  } else {
+    // top up to 5 using heuristics if the model provided fewer than 5 non-empty items
+    const need = 5 - bullets.filter((b) => b && b.length).length;
+    if (need > 0) {
+      const extras = heuristicBulletsFromText(text, 120).filter((e) => e && !bullets.includes(e));
+      for (const e of extras) {
+        const idx = bullets.findIndex((b) => !b || b.length === 0);
+        if (idx !== -1) bullets[idx] = e;
+        else bullets.push(e);
+        if (bullets.filter((b) => b && b.length).length >= 5) break;
+      }
+    }
   }
+  // Ensure exactly 5
+  bullets = bullets.slice(0, 5);
   while (bullets.length < 5) bullets.push("");
-  if (bullets.length > 5) bullets.splice(5);
+
   const ol = enforce(
     safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : scrub(text),
     120
