@@ -1,6 +1,6 @@
 # Kofa
 
-**AI-powered, Black-conscious 3-point news summaries.**
+**AI-powered, Black-conscious 5-point news summaries.**
 
 Kofa delivers concise, AI-generated article summaries that spotlight Black social movements and community impact. Enjoy **7 free stories daily** or subscribe for **unlimited access**.
 
