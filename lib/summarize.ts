@@ -5,6 +5,21 @@ import OpenAI from "openai";
 const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "gpt-4o";
 const SUMMARY_FALLBACK_MODEL = process.env.SUMMARY_FALLBACK_MODEL || "gpt-4o-mini";
 
+const SUMMARY_DEBUG =
+  process.env.NEWS_DEBUG === "1" ||
+  process.env.NEWS_DEBUG === "true" ||
+  process.env.SUMMARY_DEBUG === "1" ||
+  process.env.SUMMARY_DEBUG === "true";
+
+let _openai: OpenAI | null = null;
+function getClient(): OpenAI | null {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  if (_openai) return _openai;
+  _openai = new OpenAI({ apiKey: key });
+  return _openai;
+}
+
 // Basic promise timeout utility (ms)
 function withTimeout<T>(p: Promise<T>, ms = 45000): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -19,12 +34,6 @@ interface SummarizeResponse {
   bullets?: unknown; // expect string[] but be liberal in parser
   colorNote?: string; // tolerated in parser but not returned to callers
 }
-
-const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey) {
-  throw new Error("Missing OPENAI_API_KEY env var");
-}
-const openai = new OpenAI({ apiKey });
 
 export default async function summarizeWithPerspective(
   text: string
@@ -154,9 +163,11 @@ ${scrub(text)}`,
     }
   }
 
-  async function completeOnce(model: string) {
+  async function completeOnce(model: string, messages: Array<{ role: "system" | "user"; content: string }>) {
+    const client = getClient();
+    if (!client) throw new Error("openai: missing OPENAI_API_KEY");
     return withTimeout(
-      openai.chat.completions.create({
+      client.chat.completions.create({
         model,
         messages,
         temperature: 0.2,
@@ -170,30 +181,51 @@ ${scrub(text)}`,
 
   let response;
   try {
-    response = await completeOnce(SUMMARY_MODEL);
+    response = await completeOnce(SUMMARY_MODEL, messages);
   } catch (e: unknown) {
+    if (SUMMARY_DEBUG) console.error("[summarize] primary model error", String(e));
     const msg = (e as { message?: string })?.message || "";
     const status = (e as { status?: number })?.status;
     // quick retry on rate limit, then fall back
     if (status === 429 || /rate limit/i.test(msg)) {
       try {
-        response = await completeOnce(SUMMARY_MODEL);
+        response = await completeOnce(SUMMARY_MODEL, messages);
       } catch {
-        response = await completeOnce(SUMMARY_FALLBACK_MODEL);
+        if (SUMMARY_DEBUG) console.error("[summarize] retry failed on primary; falling back");
+        try {
+          response = await completeOnce(SUMMARY_FALLBACK_MODEL, messages);
+        } catch (err) {
+          if (SUMMARY_DEBUG) console.error("[summarize] fallback model error; attempting once", String(err));
+          response = await completeOnce(SUMMARY_FALLBACK_MODEL, messages);
+        }
       }
     } else {
       // non-rate errors fall back once
-      response = await completeOnce(SUMMARY_FALLBACK_MODEL);
+      try {
+        response = await completeOnce(SUMMARY_FALLBACK_MODEL, messages);
+      } catch (err) {
+        if (SUMMARY_DEBUG) console.error("[summarize] fallback model error; attempting once", String(err));
+        response = await completeOnce(SUMMARY_FALLBACK_MODEL, messages);
+      }
     }
+  }
+  if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+    if (SUMMARY_DEBUG) console.error("[summarize] empty OpenAI response");
+    const ol = enforce(scrub(text), 120);
+    return { oneLiner: ol, bullets: ["", "", "", "", ""] };
   }
   const raw = response.choices[0].message.content ?? "";
   const parsed = parseJsonLoose(raw);
   const safe: SummarizeResponse = typeof parsed === "object" && parsed !== null ? parsed : {};
   const bullets = normalizeBullets(safe.bullets);
+  if (!bullets.some((b) => b && b.length)) {
+    if (SUMMARY_DEBUG) console.error("[summarize] empty bullets; raw=", raw?.slice(0, 200));
+  }
   while (bullets.length < 5) bullets.push("");
   if (bullets.length > 5) bullets.splice(5);
-  return {
-    oneLiner: enforce(safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : undefined),
-    bullets,
-  };
+  const ol = enforce(
+    safe.oneLiner ? stripNoisyMarks(deAttribute(safe.oneLiner)) : scrub(text),
+    120
+  );
+  return { oneLiner: ol, bullets };
 }
