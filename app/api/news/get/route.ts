@@ -19,9 +19,9 @@ type SummaryDoc = {
   source?: string;
   publishedAt?: Date | string;
   oneLiner?: string;
-  bullets?: unknown;
+  bullets?: string[]; // normalized array of bullet strings
   colorNote?: string;
-  sources?: unknown;
+  sources?: Array<{ title?: string; domain?: string; url?: string }>; // normalized source refs
 };
 
 export async function GET(req: NextRequest) {
@@ -127,6 +127,14 @@ export async function GET(req: NextRequest) {
 
   const client = await clientPromise;
   const db     = client.db(process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "kofa");
+
+  // NOTE: Recommended indexes for performance at scale (create once via migration):
+  // db.stories.createIndex({ publishedAt: -1 })
+  // db.stories.createIndex({ source: 1 })
+  // db.stories.createIndex({ url: 1 }, { unique: true })
+  // Optional for q-search patterns:
+  // db.stories.createIndex({ title: "text", oneLiner: "text" })
+
   const col    = db.collection("stories");
 
   const total = await col.countDocuments(filter);
