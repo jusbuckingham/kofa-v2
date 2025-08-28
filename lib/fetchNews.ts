@@ -9,6 +9,7 @@ import type { UpdateFilter } from "mongodb";
 import summarizeWithPerspective from "@/lib/summarize";
 import { fetchNewsData } from "@/lib/providers/newsdata";
 import { fetchGNews } from "@/lib/providers/gnews";
+import crypto from "crypto";
 
 // ---- Ingestion tuning knobs (env-driven) ----
 const NEWS_RELAX = process.env.NEWS_RELAX === "1" || process.env.NEWS_RELAX === "true";
@@ -105,6 +106,13 @@ function enforceLen(input: unknown, max = 120): string {
   if (!input || typeof input !== "string") return "";
   const s = input.trim();
   return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}
+
+function makeStableId(url?: string | null, source?: string | null, title?: string | null): string {
+  const u = (url || "").trim();
+  if (u) return u; // prefer canonical URL as the stable id
+  const base = `${source || ""}|${title || ""}`;
+  return crypto.createHash("sha1").update(base).digest("hex");
 }
 
 // ---------- Minimal RSS parsing (fallback) ----------
@@ -343,6 +351,7 @@ function scoreStoryForLens(
 
 // ---------- Types saved to Mongo ----------
 export interface StoryDoc {
+  id: string; // stable unique id (url or sha1 fallback)
   title: string;
   url: string;
   summary: {
@@ -357,6 +366,7 @@ export interface StoryDoc {
 }
 
 type StoryUpdateSet = {
+  id: string; // write a non-null id every time
   title: string;
   url: string;
   imageUrl?: string;
@@ -582,27 +592,30 @@ export async function fetchNewsFromSource(): Promise<{
       })(),
     };
 
+    const canonicalUrl = c.url;
+    const stableId = makeStableId(canonicalUrl, getDomain(canonicalUrl), c.title ?? "");
     const doc: StoryDoc = {
+      id: stableId,
       title: c.title ?? "Untitled",
-      url: c.url,
+      url: canonicalUrl,
       summary,
       publishedAt: c.publishedAt ? new Date(c.publishedAt) : new Date(),
       createdAt: new Date(),
       imageUrl: c.imageUrl,
-      source: getDomain(c.url),
+      source: getDomain(canonicalUrl),
       sources: [
         {
           title: c.title ?? "Source",
-          url: c.url,
-          domain: getDomain(c.url),
+          url: canonicalUrl,
+          domain: getDomain(canonicalUrl),
         },
       ],
     };
 
     if (NEWS_UPDATE_EXISTING) {
-      // NOTE: Some historical docs may carry `id: null` and you have a unique index on `id`.
-      // We never set `id` here and we proactively unset it to avoid duplicate key errors.
+      // NOTE: Unique index on `id`. We set `id` to the canonical URL or sha1(source|title) fallback and include it on inserts.
       const setPayload: StoryUpdateSet = {
+        id: doc.id,
         title: doc.title,
         url: doc.url,
         imageUrl: doc.imageUrl,
@@ -616,12 +629,10 @@ export async function fetchNewsFromSource(): Promise<{
       };
 
       const updateDoc: UpdateFilter<StoryDoc> & {
-        $setOnInsert: { createdAt: Date };
-        $unset: { id?: "" };
+        $setOnInsert: { id: string; createdAt: Date };
       } = {
         $set: setPayload,
-        $setOnInsert: { createdAt: doc.createdAt },
-        $unset: { id: "" }, // ensure we remove any lingering `id` field (e.g., null) to satisfy unique index
+        $setOnInsert: { id: doc.id, createdAt: doc.createdAt },
       };
 
       const res = await storiesCol.updateOne(
