@@ -45,24 +45,35 @@ export async function GET(request: Request) {
     );
   }
 
-  const includeMeta = sp.get("meta") === "1" || sp.get("includeMeta") === "1";
+  try {
+    const includeMeta = sp.get("meta") === "1" || sp.get("includeMeta") === "1";
 
-  // Delegate ingestion to shared pipeline (handles RSS with UA, relax flags, insertion & summaries)
-  const result = await fetchNewsFromSource();
-  // Expected to include: { inserted, stories, debug? }
-  const { inserted = 0, stories = [], debug: metaDebug } = (result as FetchResult);
-  const affected = inserted + (metaDebug?.modified ?? 0);
+    // Delegate ingestion to shared pipeline (handles RSS with UA, relax flags, insertion & summaries)
+    const result = await fetchNewsFromSource();
+    // Expected to include: { inserted, stories, debug? }
+    const { inserted = 0, stories = [], debug: metaDebug } = (result as FetchResult);
+    const affected = inserted + (metaDebug?.modified ?? 0);
 
-  return NextResponse.json(
-    {
-      ok: true,
-      inserted,
-      upsertedSummaries: 0,
-      count: stories.length,
-      totalFetched: stories.length,
-      affected,
-      meta: includeMeta ? { debug: metaDebug } : undefined,
-    },
-    { status: 200, headers: { "Cache-Control": "no-store" } }
-  );
+    return NextResponse.json(
+      {
+        ok: true,
+        inserted,
+        upsertedSummaries: 0,
+        count: stories.length,
+        totalFetched: stories.length,
+        affected,
+        meta: includeMeta ? { debug: metaDebug } : undefined,
+      },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)) || "Internal Error";
+    if (process.env.NEWS_DEBUG === "1" || process.env.NEWS_DEBUG === "true") {
+      console.error("[api/news/fetch] failed:", msg);
+    }
+    return NextResponse.json(
+      { ok: false, error: msg },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 }
