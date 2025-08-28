@@ -5,6 +5,7 @@
  */
 
 import { getDb } from "@/lib/mongoClient";
+import type { UpdateFilter } from "mongodb";
 import summarizeWithPerspective from "@/lib/summarize";
 import { fetchNewsData } from "@/lib/providers/newsdata";
 import { fetchGNews } from "@/lib/providers/gnews";
@@ -355,6 +356,19 @@ export interface StoryDoc {
   sources: Array<{ title: string; url: string; domain: string }>;
 }
 
+type StoryUpdateSet = {
+  title: string;
+  url: string;
+  imageUrl?: string;
+  source: string;
+  publishedAt: Date;
+  oneLiner: string;
+  bullets: string[];
+  summary: StoryDoc["summary"];
+  sources: StoryDoc["sources"];
+  updatedAt: Date;
+};
+
 // ---------- Core fetcher ----------
 
 /**
@@ -586,23 +600,33 @@ export async function fetchNewsFromSource(): Promise<{
     };
 
     if (NEWS_UPDATE_EXISTING) {
+      // NOTE: Some historical docs may carry `id: null` and you have a unique index on `id`.
+      // We never set `id` here and we proactively unset it to avoid duplicate key errors.
+      const setPayload: StoryUpdateSet = {
+        title: doc.title,
+        url: doc.url,
+        imageUrl: doc.imageUrl,
+        source: doc.source,
+        publishedAt: doc.publishedAt,
+        oneLiner: doc.summary.oneLiner,
+        bullets: doc.summary.bullets,
+        summary: doc.summary,
+        sources: doc.sources,
+        updatedAt: new Date(),
+      };
+
+      const updateDoc: UpdateFilter<StoryDoc> & {
+        $setOnInsert: { createdAt: Date };
+        $unset: { id?: "" };
+      } = {
+        $set: setPayload,
+        $setOnInsert: { createdAt: doc.createdAt },
+        $unset: { id: "" }, // ensure we remove any lingering `id` field (e.g., null) to satisfy unique index
+      };
+
       const res = await storiesCol.updateOne(
         { url: doc.url },
-        {
-          $set: {
-            title: doc.title,
-            url: doc.url,
-            imageUrl: doc.imageUrl,
-            source: doc.source,
-            publishedAt: doc.publishedAt,
-            oneLiner: doc.summary.oneLiner,
-            bullets: doc.summary.bullets,
-            summary: doc.summary,
-            sources: doc.sources,
-            updatedAt: new Date(),
-          },
-          $setOnInsert: { createdAt: doc.createdAt },
-        },
+        updateDoc,
         { upsert: true }
       );
       debug.inserted += res.upsertedCount || 0;
