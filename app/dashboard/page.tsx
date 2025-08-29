@@ -172,7 +172,7 @@ export default async function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {stories.map((story) => (
           <div key={story.id} className="relative">
-            <StoryCard story={story} isSaved />
+            <StoryCard summary={story} isSaved />
             <RemoveFavoriteButton storyId={story.id} className="absolute top-2 right-2" />
           </div>
         ))}
