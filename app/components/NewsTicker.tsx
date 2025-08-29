@@ -143,7 +143,7 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
           return (
             <StoryCard
               key={key}
-              story={storyWithLock}
+              summary={storyWithLock}
               isSaved={savedIds.has((s.id ?? s.url)?.toString() ?? "")}
               onSaved={handleSavedToggle}
             />
