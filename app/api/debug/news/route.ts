@@ -12,10 +12,6 @@ export async function GET(req: NextRequest) {
     const present = {
       FEED_URLS: feeds.length > 0,
       OPENAI_API_KEY: !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0),
-      NEWS_RELAX: process.env.NEWS_RELAX,
-      NEWS_MIN_LEN: process.env.NEWS_MIN_LEN,
-      NEWS_MIN_LEN_TRUSTED: process.env.NEWS_MIN_LEN_TRUSTED,
-      NEWS_MAX_TO_SUMMARIZE: process.env.NEWS_MAX_TO_SUMMARIZE,
       NEWS_DEBUG: process.env.NEWS_DEBUG,
     } as const;
 
@@ -42,15 +38,6 @@ export async function GET(req: NextRequest) {
     "MONGODB_DB_NAME",
     // OpenAI / summarization
     "OPENAI_API_KEY",
-    "MAX_TO_SUMMARIZE",
-    "SUMMARY_MODEL",
-    "SUMMARY_FALLBACK_MODEL",
-    // News ingestion & ranking
-    "FEED_URLS",
-    "NEWS_LENS",
-    "NEWS_MIN_SCORE",
-    "NEWS_ALLOWLIST_ONLY",
-    "NEWS_BLACK_DOMAIN_BOOST",
     // Cron/auth
     "CRON_SECRET",
     "ALLOW_FETCH_DRYRUN_PUBLIC",

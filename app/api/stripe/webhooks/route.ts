@@ -7,16 +7,16 @@ import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { getDb } from '@/lib/mongoClient';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('[webhook] Missing STRIPE_SECRET_KEY');
-}
-if (!process.env.STRIPE_WEBHOOK_SECRET) {
-  throw new Error('[webhook] Missing STRIPE_WEBHOOK_SECRET');
-}
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2022-11-15' });
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2022-11-15' }) : null;
 
 export async function POST(req: NextRequest) {
+  if (!stripe || !STRIPE_WEBHOOK_SECRET) {
+    console.error('[webhook] Missing Stripe configuration. Ensure STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set.');
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+  }
   const sig = req.headers.get('stripe-signature');
   if (!sig) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     event = stripe.webhooks.constructEvent(
       Buffer.from(buf),
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      STRIPE_WEBHOOK_SECRET
     );
   } catch (err: unknown) {
     console.error('❌ Webhook signature verification failed:', (err as Error).message);
@@ -46,11 +46,15 @@ export async function POST(req: NextRequest) {
     // Checkout completes (immediate) or when async payments settle
     'checkout.session.completed',
     'checkout.session.async_payment_succeeded',
+    'checkout.session.async_payment_failed',
 
     // Subscription lifecycle
     'customer.subscription.created',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+    'customer.subscription.paused',
+    'customer.subscription.resumed',
+    'customer.subscription.trial_will_end',
 
     // Billing signals
     'invoice.payment_failed',
@@ -60,7 +64,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   }
 
+  // Idempotency: skip if we've already processed this Stripe event
   const db = await getDb();
+  const processed = db.collection<{ _id: string }>('stripe_events');
+  try {
+    const already = await processed.findOne({ _id: event.id });
+    if (already) {
+      return NextResponse.json({ received: true, duplicate: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+    }
+    await processed.insertOne({ _id: event.id });
+  } catch {
+    // If idempotency storage fails, we still attempt to process; worst case, we may handle twice.
+  }
+
   const users = db.collection('user_metadata');
   const usersCore = db.collection('users');
 
@@ -73,8 +89,8 @@ export async function POST(req: NextRequest) {
     email?: string | null;
     subscription?: Stripe.Subscription | null;
   }) => {
-    const hasActiveSub =
-      subscription?.status === 'active' || subscription?.status === 'trialing';
+    const status = subscription?.status ?? null;
+    const hasActiveSub = status === 'active' || status === 'trialing' || status === 'past_due';
 
     await users.updateOne(
       email
@@ -125,6 +141,37 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case 'checkout.session.async_payment_failed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const customerId = session.customer as string;
+        await users.updateOne(
+          { stripeCustomerId: customerId },
+          { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
+        );
+        break;
+      }
+
+      case 'customer.subscription.paused': {
+        const subscription = event.data.object as Stripe.Subscription;
+        await users.updateOne(
+          { stripeCustomerId: subscription.customer as string },
+          { $set: { hasActiveSub: false, subscriptionStatus: 'paused' } }
+        );
+        break;
+      }
+      case 'customer.subscription.resumed': {
+        const subscription = event.data.object as Stripe.Subscription;
+        await upsertUserByCustomer({
+          customerId: subscription.customer as string,
+          subscription,
+        });
+        break;
+      }
+      case 'customer.subscription.trial_will_end': {
+        // No state change; could send email/notification in the future.
+        break;
+      }
+
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
@@ -149,7 +196,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (err: unknown) {
-    console.error('Webhook handler error:', (err as Error).message);
+    console.error('Webhook handler error:', {
+      message: (err as Error).message,
+      eventId: event.id,
+      eventType: event.type,
+    });
     return NextResponse.json({ error: 'Webhook error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }

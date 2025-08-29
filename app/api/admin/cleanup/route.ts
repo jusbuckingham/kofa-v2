@@ -8,6 +8,9 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/mongoClient';
 
+// NOTE: This endpoint purges old stories. Access is restricted to an explicit allowlist.
+// If ALLOWED_ADMINS/FALLBACK_ADMINS are empty, only the project owner email is permitted.
+
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 export async function GET() {
@@ -16,11 +19,17 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
   }
 
-  // Admin allowlist: comma-separated emails in ENV, case-insensitive
-  const allow = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAllowed = allow.length === 0
-    ? true // if no allowlist is set, default to allowing any authenticated user
-    : allow.includes(session.user.email.trim().toLowerCase());
+  // Admin allowlist: comma-separated emails in ENV, case-insensitive.
+  // Prefer ALLOWED_ADMINS, fall back to FALLBACK_ADMINS, and finally include the primary owner email.
+  const allowList = [
+    ...(process.env.ALLOWED_ADMINS ? process.env.ALLOWED_ADMINS.split(',') : []),
+    ...(process.env.FALLBACK_ADMINS ? process.env.FALLBACK_ADMINS.split(',') : []),
+    'jus.buckingham@gmail.com',
+  ]
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const isAllowed = allowList.includes(session.user.email.trim().toLowerCase());
   if (!isAllowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403, headers: NO_STORE });
   }

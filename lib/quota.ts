@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/mongoClient";
 import { FREE_DAILY_STORY_LIMIT } from "@/lib/constants";
+import type { ObjectId } from "mongodb";
 
 // Canonical limit comes from centralized constants
 export const FREE_SUMMARIES_PER_DAY = FREE_DAILY_STORY_LIMIT;
@@ -19,6 +20,7 @@ export interface QuotaResult {
 }
 
 interface UserMetaDoc {
+  _id?: ObjectId;
   email: string;
   // New fields
   summariesViewedToday?: number;
@@ -37,12 +39,19 @@ function startOfUTCday(d: Date = new Date()): number {
   return copy.getTime();
 }
 
+async function applyUpdate(
+  coll: { updateOne: (filter: { email: string }, update: Record<string, unknown>) => Promise<unknown> },
+  email: string,
+  update: Record<string, unknown>
+) {
+  await coll.updateOne({ email }, update);
+}
+
 async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Promise<QuotaResult> {
   const db = await getDb();
   const coll = db.collection<UserMetaDoc>("user_metadata");
 
   const keyEmail = email.trim().toLowerCase();
-
   const todayKey = startOfUTCday();
 
   const doc = await coll.findOne({ email: keyEmail });
@@ -67,100 +76,87 @@ async function upsertAndCheckSummaryQuota(email: string, increment: boolean): Pr
       limit: FREE_SUMMARIES_PER_DAY,
       allowed: summariesToday <= FREE_SUMMARIES_PER_DAY,
       hasActiveSub,
-      // back-compat mirrors
       readsToday: summariesToday,
       totalReads: totalSummaries,
     };
   }
 
-  // Handle UTC day rollover
+  // Handle UTC day rollover — always zero today's counter at rollover
   const reset = doc.lastResetUTC !== todayKey;
 
   // Migrate legacy fields if present
-  let summariesToday = reset ? 0 : (doc.summariesViewedToday ?? doc.readsToday ?? 0);
+  let summariesTodayBase = doc.summariesViewedToday ?? doc.readsToday ?? 0;
+  if (reset) summariesTodayBase = 0; // new day
   let totalSummaries = doc.summariesTotal ?? doc.totalReads ?? 0;
   const hasActiveSub = Boolean(doc.hasActiveSub);
+
+  // Persist reset if needed
+  if (reset) {
+    await applyUpdate(coll, keyEmail, {
+      $set: { lastResetUTC: todayKey, summariesViewedToday: summariesTodayBase, summariesTotal: totalSummaries },
+    });
+  }
 
   // Subscribers: unlimited, but still track counters
   if (hasActiveSub) {
     if (increment) {
-      await coll.updateOne(
-        { email: keyEmail },
-        {
-          $set: { lastResetUTC: todayKey },
-          $inc: { summariesViewedToday: 1, summariesTotal: 1 },
-        }
-      );
-      summariesToday += 1;
+      await applyUpdate(coll, keyEmail, {
+        $inc: { summariesViewedToday: 1, summariesTotal: 1 },
+      });
+      summariesTodayBase += 1;
       totalSummaries += 1;
-    } else if (reset) {
-      await coll.updateOne(
-        { email: keyEmail },
-        { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
-      );
     }
 
     return {
-      summariesToday,
+      summariesToday: summariesTodayBase,
       totalSummaries,
       limit: null,
       allowed: true,
       hasActiveSub,
-      // back-compat
-      readsToday: summariesToday,
+      readsToday: summariesTodayBase,
       totalReads: totalSummaries,
     };
   }
 
   // Non-subscriber flow
-  const projected = increment ? summariesToday + 1 : summariesToday;
+  const projected = increment ? summariesTodayBase + 1 : summariesTodayBase;
   const allowed = projected <= FREE_SUMMARIES_PER_DAY;
 
   if (increment && allowed) {
-    await coll.updateOne(
-      { email: keyEmail },
-      {
-        $set: { lastResetUTC: todayKey },
-        $inc: { summariesViewedToday: 1, summariesTotal: 1 },
-      }
-    );
-    summariesToday = projected;
+    await applyUpdate(coll, keyEmail, {
+      $inc: { summariesViewedToday: 1, summariesTotal: 1 },
+    });
+    summariesTodayBase = projected;
     totalSummaries += 1;
-  } else if (reset) {
-    await coll.updateOne(
-      { email: keyEmail },
-      { $set: { lastResetUTC: todayKey, summariesViewedToday: summariesToday, summariesTotal: totalSummaries } }
-    );
   }
 
   return {
-    summariesToday,
+    summariesToday: summariesTodayBase,
     totalSummaries,
     limit: FREE_SUMMARIES_PER_DAY,
     allowed,
     hasActiveSub,
-    // back-compat mirrors
-    readsToday: summariesToday,
+    readsToday: summariesTodayBase,
     totalReads: totalSummaries,
   };
 }
 
 // New canonical APIs
-export async function incrementSummaryView(email: string) {
+export async function incrementSummaryView(email: string): Promise<QuotaResult> {
   return upsertAndCheckSummaryQuota(email, true);
 }
 
-export async function peekSummaryQuota(email: string) {
+export async function peekSummaryQuota(email: string): Promise<QuotaResult> {
   return upsertAndCheckSummaryQuota(email, false);
 }
 
 // Backwards-compatible aliases (deprecated)
 /** @deprecated use incrementSummaryView */
-export async function incrementRead(email: string) {
+export async function incrementRead(email: string): Promise<QuotaResult> {
   return incrementSummaryView(email);
 }
 
 /** @deprecated use peekSummaryQuota */
-export async function peekQuota(email: string) {
+export async function peekQuota(email: string): Promise<QuotaResult> {
   return peekSummaryQuota(email);
 }

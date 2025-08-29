@@ -1,19 +1,28 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import AdminPanel from "./AdminPanel";
 
 /**
  * Admins can be configured via the ALLOWED_ADMINS env var.
  * Example: ALLOWED_ADMINS="admin1@example.com,admin2@example.com"
+ *
+ * We normalize emails to lowercase to avoid case-sensitivity issues.
  */
 const allowedAdminsFromEnv =
   (process.env.ALLOWED_ADMINS ?? "")
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
-// Fallback to your existing admin if env var is not set
-const FALLBACK_ADMINS = ["jus.buckingham@gmail.com"];
+// Fallback admins can be provided via env as well (comma-separated).
+// Defaults to your original admin if not provided.
+const FALLBACK_ADMINS =
+  (process.env.FALLBACK_ADMINS ?? "jus.buckingham@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
 const allowedAdmins = allowedAdminsFromEnv.length > 0 ? allowedAdminsFromEnv : FALLBACK_ADMINS;
 
 export const metadata = {
@@ -24,28 +33,13 @@ export const metadata = {
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
 
-  if (!session) {
+  // Normalize to lowercase for comparison
+  const email = session?.user?.email?.toLowerCase();
+
+  // If not logged in or not an allowed admin, redirect to sign-in
+  if (!email || !allowedAdmins.includes(email)) {
     redirect("/api/auth/signin");
   }
 
-  const email = session.user?.email ?? "";
-  if (!email || !allowedAdmins.includes(email)) {
-    redirect("/");
-  }
-
-  return (
-    <main className="min-h-screen p-6 bg-white dark:bg-gray-900 text-black dark:text-white">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold mb-4">Admin Dashboard</h1>
-        <p>Welcome, {email}</p>
-
-        <div className="mt-6 rounded-md border border-gray-200 dark:border-gray-800 p-4">
-          <h2 className="font-semibold mb-2">Access</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            Allowed admins: {allowedAdmins.join(", ") || "None configured"}
-          </p>
-        </div>
-      </div>
-    </main>
-  );
+  return <AdminPanel />;
 }

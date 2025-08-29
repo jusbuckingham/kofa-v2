@@ -30,7 +30,7 @@ Kofa delivers concise, AI-generated article summaries that spotlight Black socia
 ## Features
 
 - **Multi-source news ingestion:** Aggregates from NewsData, GNews, and RSS feeds (defaults include TheGrio, The Root, Capital B, LA Sentinel, Essence). All content passes relevance and junk filtering before AI summarization and storage in MongoDB.
-- **Black-conscious summaries:** 3-point bullet summaries emphasizing historical context and community impact.
+- **Black-conscious summaries:** 5-point bullet summaries emphasizing historical context and community impact.
 - **Ranking system:** Trust-list boosts for major outlets plus extra weight for Black publishers (e.g., TheGrio, The Root, LA Sentinel). Fully configurable via environment variables.
 - **Metered paywall:** Access 7 free stories per day; unlimited reading with subscription.
 - **Authentication:** Secure magic-link email login powered by NextAuth.
@@ -91,9 +91,7 @@ tsconfig.json
 
 ---
 
-## Troubleshooting
-
-- **Unescaped apostrophes:** Use `&apos;` in JSX to satisfy Vercel linting.
+- **Unescaped apostrophes:** Use `&apos;` in JSX/TSX to pass linting on Vercel builds.
 - **Session and quota hooks:** Wrap your app with `<SessionProvider>` and `<ReadQuotaProvider>` in `app/providers.tsx`.
 - **Blank page issues:** Confirm `app/layout.tsx` and `app/page.tsx` exist; clear the `.next` cache.
 - **TypeScript aliasing:** Verify paths in `tsconfig.json` (`@/components`, `@/lib`, `@/types`).
@@ -103,4 +101,4 @@ tsconfig.json
 
 ## License
 
-MIT © 2025 Jus Buckingham
+MIT © 2025 Jus Kwesi Buckingham

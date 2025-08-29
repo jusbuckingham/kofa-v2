@@ -26,24 +26,25 @@ async function ensureFavoritesIndex() {
       try {
         const db = await getDb();
         await db
-          .collection<FavoriteDoc>("favorites")
-          .createIndex({ email: 1, storyId: 1 }, { unique: true, name: "uniq_email_story" });
+          .collection<FavoriteDoc>('favorites')
+          .createIndex({ email: 1, storyId: 1 }, { unique: true, name: 'uniq_email_story' });
       } catch {
-        // ignore index creation errors (already exists, permissions, etc.)
+        // ignore (already exists, permissions, etc.)
       }
     })();
   }
   return ensureIndexPromise;
 }
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json(
-    { ok: false, error: message },
-    { status, headers: { 'Cache-Control': 'no-store' } }
-  );
+function json(data: unknown, status = 200) {
+  return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-async function requireSession() {
+function jsonError(message: string, status = 400) {
+  return json({ ok: false, error: message }, status);
+}
+
+async function requireSessionEmail() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     throw new Response('Unauthorized', { status: 401 });
@@ -51,47 +52,62 @@ async function requireSession() {
   return session.user.email.trim().toLowerCase();
 }
 
-// GET /api/favorites -> list of saved story IDs for the current user
-export async function GET() {
+// GET /api/favorites?limit=50&offset=0
+export async function GET(req: NextRequest) {
   try {
-    const email = await requireSession();
+    const email = await requireSessionEmail();
     await ensureFavoritesIndex();
     const db = await getDb();
 
-    const favs = await db
-      .collection<FavoriteDoc>('favorites')
+    const { searchParams } = new URL(req.url);
+    const limitParam = searchParams.get('limit');
+    const offsetParam = searchParams.get('offset');
+
+    const limit = Math.min(Math.max(Number(limitParam ?? 0) || 0, 0), 200); // cap to 200
+    const offset = Math.max(Number(offsetParam ?? 0) || 0, 0);
+
+    const coll = db.collection<FavoriteDoc>('favorites');
+
+    const cursor = coll
       .find({ email })
       .project<{ storyId: string }>({ _id: 0, storyId: 1 })
-      .toArray();
+      .sort({ createdAt: -1 });
 
-    const items = favs.map((f: { storyId: string }) => ({ id: f.storyId }));
-    return NextResponse.json(items, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+    const total = await coll.countDocuments({ email });
+
+    if (limit > 0) {
+      cursor.skip(offset).limit(limit);
+    }
+
+    const favs = await cursor.toArray();
+    const items = favs.map((f) => ({ id: f.storyId }));
+
+    return json({ ok: true, items, total, limit, offset });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to load favorites', 500);
   }
 }
 
-// POST /api/favorites -> save a story { storyId }
+// POST /api/favorites -> { storyId }
 export async function POST(req: NextRequest) {
   try {
-    const email = await requireSession();
+    const email = await requireSessionEmail();
+
     let body: unknown;
     try {
-      body = (await req.json()) as unknown;
+      body = await req.json();
     } catch {
       return jsonError('Invalid JSON body', 400);
     }
 
-    if (!body || typeof body !== 'object' || typeof (body as FavoriteInput).storyId !== 'string') {
-      return jsonError('Invalid payload: missing storyId', 422);
-    }
+    const storyId = typeof (body as FavoriteInput)?.storyId === 'string'
+      ? (body as FavoriteInput).storyId.trim()
+      : '';
 
-    const storyId = (body as FavoriteInput).storyId.trim();
-    if (!storyId) return jsonError('storyId cannot be empty', 422);
+    if (!storyId) return jsonError('Invalid payload: missing storyId', 422);
 
     await ensureFavoritesIndex();
-
     const db = await getDb();
 
     await db
@@ -102,38 +118,37 @@ export async function POST(req: NextRequest) {
         { upsert: true }
       );
 
-    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+    return json({ ok: true });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to save favorite', 500);
   }
 }
 
-// DELETE /api/favorites -> remove a favorite { storyId }
+// DELETE /api/favorites -> { storyId }
 export async function DELETE(req: NextRequest) {
   try {
-    const email = await requireSession();
+    const email = await requireSessionEmail();
+
     let body: unknown;
     try {
-      body = (await req.json()) as unknown;
+      body = await req.json();
     } catch {
       return jsonError('Invalid JSON body', 400);
     }
 
-    if (!body || typeof body !== 'object' || typeof (body as FavoriteInput).storyId !== 'string') {
-      return jsonError('Invalid payload: missing storyId', 422);
-    }
+    const storyId = typeof (body as FavoriteInput)?.storyId === 'string'
+      ? (body as FavoriteInput).storyId.trim()
+      : '';
 
-    const storyId = (body as FavoriteInput).storyId.trim();
-    if (!storyId) return jsonError('storyId cannot be empty', 422);
+    if (!storyId) return jsonError('Invalid payload: missing storyId', 422);
 
     await ensureFavoritesIndex();
-
     const db = await getDb();
 
     await db.collection<FavoriteDoc>('favorites').deleteOne({ email, storyId });
 
-    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+    return json({ ok: true });
   } catch (err) {
     if (err instanceof Response) return err;
     return jsonError('Failed to remove favorite', 500);

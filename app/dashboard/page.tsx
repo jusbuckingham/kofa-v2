@@ -41,7 +41,24 @@ interface StoryDoc {
   >;
 }
 
+
 interface FavoriteDoc { email: string; storyId: string }
+
+function EmptyState() {
+  return (
+    <main className="max-w-5xl mx-auto px-4 py-8">
+      <CleanUrlClient />
+      <h1 className="text-2xl font-bold mb-4">Your Favorites</h1>
+      <p className="text-center text-gray-500">
+        You have no saved summaries.&nbsp;
+        <Link href="/" className="underline hover:text-gray-700 dark:hover:text-gray-200">
+          Browse summaries
+        </Link>
+        &nbsp;to add some.
+      </p>
+    </main>
+  );
+}
 
 export default async function DashboardPage() {
   // ===== Auth guard =====
@@ -62,44 +79,40 @@ export default async function DashboardPage() {
     .toArray();
 
   if (favDocs.length === 0) {
+    return <EmptyState />;
+  }
+
+  // ===== Fetch stories by ID =====
+  // Validate first (ObjectId() throws on bad input), then convert.
+  const validIds: ObjectId[] = favDocs
+    .map((f) => f.storyId?.trim())
+    .filter((id): id is string => Boolean(id) && ObjectId.isValid(id as string))
+    .map((id) => new ObjectId(id));
+
+  if (validIds.length === 0) {
+    return <EmptyState />;
+  }
+
+  let storyDocs: StoryDoc[] = [];
+  try {
+    storyDocs = await db
+      .collection<StoryDoc>("stories")
+      .find({ _id: { $in: validIds } })
+      .sort({ publishedAt: -1 })
+      .toArray();
+  } catch {
     return (
       <main className="max-w-5xl mx-auto px-4 py-8">
         <CleanUrlClient />
         <h1 className="text-2xl font-bold mb-4">Your Favorites</h1>
         <p className="text-center text-gray-500">
-          You have no saved summaries.&nbsp;
-          <Link href="/" className="underline hover:text-gray-700 dark:hover:text-gray-200">
-            Browse summaries
-          </Link>
-          &nbsp;to add some.
+          We couldn&apos;t load your saved summaries right now. Please try again shortly.
         </p>
       </main>
     );
   }
 
-  // ===== Fetch stories by ID =====
-  const ids = favDocs.map((f: FavoriteDoc) => new ObjectId(f.storyId));
-  const validIds = ids.filter((id: ObjectId) => ObjectId.isValid(id));
-  if (validIds.length === 0) {
-    return (
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        <CleanUrlClient />
-        <h1 className="text-2xl font-bold mb-4">Your Favorites</h1>
-        <p className="text-center text-gray-500">
-          You have no saved summaries.&nbsp;
-          <Link href="/" className="underline hover:text-gray-700 dark:hover:text-gray-200">
-            Browse summaries
-          </Link>
-          &nbsp;to add some.
-        </p>
-      </main>
-    );
-  }
-  const storyDocs = await db
-    .collection<StoryDoc>("stories")
-    .find({ _id: { $in: validIds } })
-    .sort({ publishedAt: -1 })
-    .toArray();
+  type StorySourceEntry = NonNullable<StoryDoc["sources"]>[number];
 
   // ===== Map to SummaryItem =====
   const stories: SummaryItem[] = storyDocs.map((doc: StoryDoc) => {
@@ -167,4 +180,3 @@ export default async function DashboardPage() {
     </main>
   );
 }
-type StorySourceEntry = NonNullable<StoryDoc["sources"]>[number];
