@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState } from 'react';
@@ -25,8 +23,8 @@ export default function RemoveFavoriteButton({ storyId, className }: RemoveFavor
         throw new Error('Failed to remove favorite');
       }
       router.refresh();
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      console.error('Error removing favorite:', err);
     } finally {
       setLoading(false);
     }
@@ -34,8 +32,11 @@ export default function RemoveFavoriteButton({ storyId, className }: RemoveFavor
 
   return (
     <button
+      type="button"
       onClick={handleRemove}
       disabled={loading}
+      aria-busy={loading}
+      aria-label="Remove from favorites"
       className={`text-red-500 hover:text-red-700 text-sm flex items-center gap-1 ${className ?? ''}`}
     >
       <FiTrash2 size={16} />

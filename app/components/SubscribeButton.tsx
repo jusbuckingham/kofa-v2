@@ -2,28 +2,64 @@
 import { useState } from 'react';
 import { useSession, signIn } from 'next-auth/react';
 
-type CheckoutResp = { url?: string; error?: string };
+type UnknownRecord = Record<string, unknown>;
+
+interface SessionUser extends UnknownRecord {
+  hasActiveSub?: boolean;
+}
+
+interface SessionData extends UnknownRecord {
+  user?: SessionUser;
+}
+
+interface CheckoutResp {
+  url?: string;
+  error?: string;
+}
+
+function isSessionUser(obj: unknown): obj is SessionUser {
+  return typeof obj === 'object' && obj !== null && 'hasActiveSub' in (obj as UnknownRecord);
+}
+
+function isSessionData(obj: unknown): obj is SessionData {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const rec = obj as UnknownRecord;
+  const user = rec.user as unknown;
+  return typeof user === 'object' && user !== null && isSessionUser(user);
+}
+
+async function fetchJson(url: string, options?: RequestInit): Promise<CheckoutResp> {
+  const res = await fetch(url, options);
+  let data: CheckoutResp = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore JSON parse errors, leave data as empty object
+  }
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || 'Request failed');
+  }
+  return data;
+}
 
 export default function SubscribeButton() {
   const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
 
-  const hasActiveSub: boolean = Boolean((session as unknown as { user?: { hasActiveSub?: boolean } })?.user?.hasActiveSub);
+  const hasActiveSub = isSessionData(session) && session.user?.hasActiveSub === true;
 
   const goToPortal = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/stripe/subscription', {
+      const data = await fetchJson('/api/stripe/subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'portal' }),
       });
-      const data: CheckoutResp = await res.json().catch(() => ({} as CheckoutResp));
-      if (!res.ok || !data.url) throw new Error(data.error || 'Unable to open portal');
-      window.location.assign(data.url);
+      window.location.assign(data.url!);
     } catch (err) {
       console.error(err);
-      alert((err as Error).message);
+      alert(err instanceof Error ? err.message : 'Unable to open portal');
     } finally {
       setLoading(false);
     }
@@ -32,13 +68,14 @@ export default function SubscribeButton() {
   const startCheckout = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data: CheckoutResp = await res.json().catch(() => ({} as CheckoutResp));
-      if (!res.ok || !data.url) throw new Error(data.error || 'Checkout failed');
-      window.location.assign(data.url);
+      const data = await fetchJson('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      window.location.assign(data.url!);
     } catch (err) {
       console.error(err);
-      alert((err as Error).message);
+      alert(err instanceof Error ? err.message : 'Checkout failed');
     } finally {
       setLoading(false);
     }
@@ -46,9 +83,8 @@ export default function SubscribeButton() {
 
   const handleClick = async () => {
     if (status !== 'authenticated' || !session) {
-      // Redirect to sign-in, then return to this page
-      const cb = typeof window !== 'undefined' ? window.location.href : '/';
-      await signIn(undefined, { callbackUrl: cb });
+      const callbackUrl = typeof window !== 'undefined' ? window.location.href : '/';
+      await signIn(undefined, { callbackUrl });
       return;
     }
     if (hasActiveSub) {
@@ -58,16 +94,18 @@ export default function SubscribeButton() {
     }
   };
 
-  const label = status === 'loading'
-    ? 'Loading…'
-    : hasActiveSub
-    ? 'Manage Subscription'
-    : 'Subscribe $5/mo';
+  const label =
+    status === 'loading'
+      ? 'Loading…'
+      : hasActiveSub
+      ? 'Manage Subscription'
+      : 'Subscribe $5/mo';
 
   const disabled = loading || status === 'loading';
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       disabled={disabled}
       aria-label={label}

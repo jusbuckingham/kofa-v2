@@ -11,18 +11,19 @@ interface NewsTickerProps {
 }
 
 // Helper to merge and de‑duplicate by a stable key (id fallback to url)
-function mergeUnique(prev: SummaryItem[], next: SummaryItem[]): SummaryItem[] {
-  const map = new Map<string, SummaryItem>();
-  const put = (s: SummaryItem) => {
-    const k = (s.id ?? s.url).toString();
-    if (!map.has(k)) map.set(k, s);
+// This is generic for any item with id or url.
+function mergeUnique<T extends { id?: string | number; url?: string }>(prev: T[], next: T[]): T[] {
+  const map = new Map<string, T>();
+  const put = (s: T) => {
+    const k = (s.id ?? s.url)?.toString();
+    if (k && !map.has(k)) map.set(k, s);
   };
   prev.forEach(put);
   next.forEach(put);
   return Array.from(map.values());
 }
 
-export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
+export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): JSX.Element {
   const [summaries, setSummaries] = useState<SummaryItem[]>(initialSummaries);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,8 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
 
   const hasInitial = useRef<boolean>(initialSummaries.length > 0);
 
-  const handleSavedToggle = (id: string) => {
+  // Toggle saved story IDs
+  const handleSavedToggle = (id: string): void => {
     setSavedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -44,7 +46,8 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
     });
   };
 
-  const loadMore = async () => {
+  // Load more stories (next page); disables loading on error or no more data.
+  const loadMore = async (): Promise<void> => {
     setLoading(true);
     setError(null);
     const ac = new AbortController();
@@ -52,8 +55,11 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
       const res = await fetch(`/api/news/get?page=${page + 1}`, { cache: 'no-store', signal: ac.signal });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       // New API shape: { ok, stories: SummaryItem[], total }
-      const json: NewsResponse = await res.json();
-      const data = Array.isArray(json.stories) ? json.stories : [];
+      const json = (await res.json()) as unknown;
+      // Validate NewsResponse shape
+      const data = Array.isArray((json as NewsResponse)?.stories)
+        ? (json as NewsResponse).stories
+        : [];
       if (data.length === 0) {
         setHasMore(false);
         return;
@@ -64,7 +70,7 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
-      ac.abort();
+      // No need to abort here; aborting in finally can cancel the just-completed fetch.
     }
   };
 
@@ -73,39 +79,50 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
     let cancelled = false;
     (async () => {
       try {
-        // Fetch quota (free limit & subscription)
+        // Fetch quota (free limit & subscription count/limit)
         const q = await fetch('/api/user/read', { cache: 'no-store', signal: ac.signal });
         if (q.ok) {
-          const data: QuotaResponse = await q.json();
+          const data = (await q.json()) as unknown;
           if (!cancelled) {
-            setHasActiveSub(Boolean(data?.hasActiveSub));
-            if (typeof data?.limit === 'number') setFreeLimit(data.limit);
+            // Quota logic: set freeLimit and subscription status.
+            setHasActiveSub(Boolean((data as QuotaResponse)?.hasActiveSub));
+            if (typeof (data as QuotaResponse)?.limit === 'number') setFreeLimit((data as QuotaResponse).limit!);
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore quota error
+      }
 
       try {
         // Fetch saved favorites to pre-mark cards
         const f = await fetch('/api/favorites', { cache: 'no-store', signal: ac.signal });
         if (f.ok) {
-          const favs = (await f.json()) as { id: string }[];
-          if (!cancelled) setSavedIds(new Set(favs.map(x => x.id).filter(Boolean)));
+          const favs = (await f.json()) as unknown;
+          // Saved IDs logic: only use string ids
+          if (!cancelled && Array.isArray(favs)) {
+            setSavedIds(new Set((favs as { id?: string }[]).map(x => x.id).filter(Boolean) as string[]));
+          }
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore favorites error
+      }
       // If no initial summaries were provided, fetch the first page so the ticker isn't empty.
       if (!cancelled && !hasInitial.current) {
         try {
           setLoading(true);
           const r0 = await fetch('/api/news/get?page=1', { cache: 'no-store', signal: ac.signal });
           if (r0.ok) {
-            const j0: NewsResponse = await r0.json();
-            const data0 = Array.isArray(j0.stories) ? j0.stories : [];
+            const j0 = (await r0.json()) as unknown;
+            const data0 = Array.isArray((j0 as NewsResponse)?.stories)
+              ? (j0 as NewsResponse).stories
+              : [];
             setSummaries(prev => mergeUnique(prev, data0));
             setHasMore(data0.length > 0);
             setPage(1);
           }
-        } catch { /* ignore */ }
-        finally {
+        } catch {
+          // ignore initial fetch error
+        } finally {
           hasInitial.current = true;
           setLoading(false);
         }
@@ -119,8 +136,10 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps) {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {summaries.map((s, i) => {
           const key = (s.id ?? s.url ?? `summary-${i}`).toString();
+          // Quota logic: lock stories above freeLimit unless subscribed.
           const shouldLock = !hasActiveSub && i >= freeLimit;
-          const storyWithLock = ({ ...s, locked: shouldLock });
+          // Ensure type safety for locked property.
+          const storyWithLock: SummaryItem & { locked?: boolean } = { ...s, locked: shouldLock };
           return (
             <StoryCard
               key={key}

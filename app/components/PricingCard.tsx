@@ -37,7 +37,7 @@ export default function PricingCard({ plan }: PricingCardProps) {
         }`}
       />
       {plan.disabled && (
-        <span className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 shadow-sm animate-pulse" aria-live="polite">
+        <span className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 shadow-sm motion-safe:animate-pulse" aria-live="polite">
           Coming soon
         </span>
       )}
@@ -50,8 +50,8 @@ export default function PricingCard({ plan }: PricingCardProps) {
           {plan.price}
         </p>
         <ul className="mb-6 space-y-3">
-          {plan.features.map((feature) => (
-            <li key={feature} className={`flex items-center ${plan.disabled ? "text-gray-500" : "text-gray-700"}`}>
+          {plan.features.map((feature, idx) => (
+            <li key={idx} className={`flex items-center ${plan.disabled ? "text-gray-500" : "text-gray-700"}`}>
               <FiCheck
                 className={`mr-2 flex-shrink-0 ${plan.disabled ? "text-gray-400" : "text-blue-600"}`}
                 aria-hidden="true"
@@ -63,9 +63,10 @@ export default function PricingCard({ plan }: PricingCardProps) {
         {plan.href && !plan.disabled ? (
           <Link
             href={plan.href}
+            prefetch={false}
             aria-label={`${plan.buttonText} - ${plan.name}`}
-            className={`mt-auto inline-flex items-center justify-center px-6 py-3 rounded-lg font-semibold transition shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg ${
-              plan.featured ? "ring-2 ring-blue-400/50 shadow-blue-500/20 animate-pulse" : ""
+            className={`mt-auto inline-flex items-center justify-center px-6 py-3 rounded-lg font-semibold transition shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus-visible:ring-2 focus-visible:ring-blue-500 bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg ${
+              plan.featured ? "ring-2 ring-blue-400/50 shadow-blue-500/20 motion-safe:animate-pulse" : ""
             }`}
           >
             {plan.buttonText}
@@ -77,10 +78,10 @@ export default function PricingCard({ plan }: PricingCardProps) {
             disabled={plan.disabled}
             title={plan.disabled ? "This plan is coming soon" : undefined}
             aria-label={`${plan.buttonText} - ${plan.name}`}
-            className={`mt-auto px-6 py-3 rounded-lg font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+            className={`mt-auto px-6 py-3 rounded-lg font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus-visible:ring-2 focus-visible:ring-blue-500 ${
               plan.disabled
                 ? "bg-gray-300 text-gray-600 cursor-not-allowed shadow-none"
-                : `bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg ${plan.featured ? "ring-2 ring-blue-400/50 shadow-blue-500/20 animate-pulse" : ""}`
+                : `bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg ${plan.featured ? "ring-2 ring-blue-400/50 shadow-blue-500/20 motion-safe:animate-pulse" : ""}`
             }`}
           >
             {plan.buttonText}

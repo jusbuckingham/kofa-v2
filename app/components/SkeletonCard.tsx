@@ -1,5 +1,18 @@
 "use client";
 
+type SkeletonCardProps = {
+  /** Preset layout sizing */
+  variant?: "full" | "compact";
+  /** Number of bullet rows to render */
+  bullets?: number;
+  /** Whether to include the image placeholder at the top */
+  showImage?: boolean;
+  /** Whether to include the subtle sources row at the bottom */
+  showSources?: boolean;
+  /** Additional class names for the outer wrapper */
+  className?: string;
+};
+
 function Placeholder({ className }: { className: string }) {
   return (
     <div
@@ -9,25 +22,56 @@ function Placeholder({ className }: { className: string }) {
   );
 }
 
-// Declarative layout config (stable keys, no arrays created in render)
-const BULLET_COUNT = 4;
-const SKELETON_BLOCKS: Array<{ key: string; className: string }> = [
-  { key: "image", className: "w-full h-40" },
-  { key: "title", className: "h-6 w-3/4" },
-  ...Array.from({ length: BULLET_COUNT }, (_, i) => ({
-    key: `bullet-${i}`,
-    className: "h-4 w-5/6",
-  })),
-  { key: "color-note", className: "h-4 w-2/3" },
-  // Slightly lighter to hint this is a link area; keep intentional color difference
-  { key: "sources", className: "h-3 w-1/2 bg-gray-200 dark:bg-gray-600" },
-];
+/**
+ * SkeletonCard
+ * - Accessible: aria-hidden on parts + role=presentation on wrapper
+ * - Reusable: accepts variant, bullets, toggles for sections
+ * - Lightweight: no external deps for class merging
+ */
+export default function SkeletonCard({
+  variant = "full",
+  bullets = 4,
+  showImage = true,
+  showSources = true,
+  className = "",
+}: SkeletonCardProps) {
+  const imageHeight = variant === "full" ? "h-40" : "h-24";
+  const titleWidth = variant === "full" ? "w-3/4" : "w-2/3";
+  const bulletWidth = variant === "full" ? "w-5/6" : "w-4/5";
 
-export default function SkeletonCard() {
+  const blocks: Array<{ key: string; className: string }> = [];
+
+  if (showImage) {
+    blocks.push({ key: "image", className: `w-full ${imageHeight}` });
+  }
+
+  blocks.push({ key: "title", className: `h-6 ${titleWidth}` });
+
+  for (let i = 0; i < bullets; i++) {
+    blocks.push({ key: `bullet-${i}`, className: `h-4 ${bulletWidth}` });
+  }
+
+  // Only render "color-note" stripe for full variant
+  if (variant === "full") {
+    blocks.push({ key: "color-note", className: "h-4 w-2/3" });
+  }
+
+  if (showSources) {
+    // Slightly lighter to hint this is a link area
+    blocks.push({
+      key: "sources",
+      className: "h-3 w-1/2 bg-gray-200 dark:bg-gray-600",
+    });
+  }
+
   return (
-    <div aria-hidden="true" className="border-b pb-4 animate-pulse space-y-2">
-      {SKELETON_BLOCKS.map(({ key, className }) => (
-        <Placeholder key={key} className={className} />
+    <div
+      role="presentation"
+      aria-hidden="true"
+      className={`border-b pb-4 animate-pulse space-y-2 ${className}`}
+    >
+      {blocks.map(({ key, className: cn }) => (
+        <Placeholder key={key} className={cn} />
       ))}
     </div>
   );

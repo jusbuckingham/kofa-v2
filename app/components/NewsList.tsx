@@ -28,9 +28,11 @@ export default function NewsList() {
   const [loading, setLoading] = useState(false);
   const firstLoadRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastReqOffset, setLastReqOffset] = useState<number>(0);
 
   // fetch page
-  const fetchPage = async (nextOffset: number) => {
+  const fetchPage = async (nextOffset: number): Promise<void> => {
+    setLastReqOffset(nextOffset);
     setLoading(true);
     setError(null);
     try {
@@ -45,17 +47,22 @@ export default function NewsList() {
       });
       if (!res.ok) {
         setError(`Failed to load stories (status ${res.status}).`);
-        setLoading(false);
         return;
       }
-      const data: GetResponse = await res.json();
-      setItems((prev) => {
-        const merged = nextOffset === 0 ? data.stories : [...prev, ...data.stories];
-        const unique = Array.from(new Map(merged.map((s) => [s.id, s])).values());
-        return unique;
-      });
-      setHasMore(data.hasMore);
-      setOffset(nextOffset + PAGE_SIZE);
+      try {
+        const data: GetResponse = await res.json();
+        setItems((prev) => {
+          const merged = nextOffset === 0 ? data.stories : [...prev, ...data.stories];
+          const unique = Array.from(new Map(merged.map((s) => [s.id, s])).values());
+          return unique;
+        });
+        setHasMore(data.hasMore);
+        setOffset(nextOffset + PAGE_SIZE);
+      } catch {
+        setError('Failed to parse stories data.');
+      }
+    } catch {
+      setError('Network error while fetching stories.');
     } finally {
       setLoading(false);
     }
@@ -69,7 +76,7 @@ export default function NewsList() {
   }, []);
 
   // how many can be shown without blur
-  const visibleFreeCount = useMemo(() => (isPro ? Number.POSITIVE_INFINITY : FREE_VISIBLE_LIMIT), [isPro]);
+  const visibleFreeCount: number = useMemo(() => (isPro ? Number.POSITIVE_INFINITY : FREE_VISIBLE_LIMIT), [isPro]);
 
   const handleLoadMore = () => {
     // IMPORTANT: keep paging even if the next items will be locked
@@ -81,8 +88,19 @@ export default function NewsList() {
   return (
     <div className="mx-auto max-w-4xl">
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
+        <div
+          className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          role="alert"
+          aria-live="polite"
+        >
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => fetchPage(lastReqOffset || 0)}
+            className="inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm transition hover:bg-red-50"
+          >
+            Retry
+          </button>
         </div>
       )}
       {/* Empty state */}
@@ -119,6 +137,8 @@ export default function NewsList() {
           <button
             onClick={handleLoadMore}
             disabled={loading}
+            aria-busy={loading}
+            aria-disabled={loading}
             className="inline-flex items-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-800 shadow-sm transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? 'Loading…' : 'Load more'}

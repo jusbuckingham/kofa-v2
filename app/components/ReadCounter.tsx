@@ -5,29 +5,48 @@ import { useQuota } from "./ReadQuotaContext";
 
 interface ReadCounterProps {
   className?: string;
+  /** Label for what is being counted (e.g., "summaries" or "articles"). Defaults to "summaries". */
+  label?: string;
+  /** Optional loading message while quota is being fetched. Defaults to "Loading…". */
+  loadingMessage?: string;
 }
 
-export function ReadCounter({ className }: ReadCounterProps) {
+export function ReadCounter({
+  className,
+  label = "summaries",
+  loadingMessage = "Loading…",
+}: ReadCounterProps) {
   const { remaining, limit, hasActiveSub } = useQuota();
 
-  // If quota hasn’t loaded yet, render nothing
+  // Subtle accessible loading state
   if (remaining === null) {
-    return null;
-  }
-
-  // For subscribers, show unlimited summaries
-  if (hasActiveSub) {
     return (
-      <div className={className}>
-        ✅ Unlimited summaries (Subscriber)
-      </div>
+      <p
+        className={className ?? "text-sm text-gray-600"}
+        aria-live="polite"
+        role="status"
+      >
+        {loadingMessage}
+      </p>
     );
   }
 
-  // For non-subscribers, show the remaining count
+  // For subscribers, show unlimited
+  if (hasActiveSub) {
+    return (
+      <p className={className ?? "text-sm text-gray-700"} aria-live="polite">
+        <span role="img" aria-label="check">✅</span>{" "}
+        Unlimited {label} (Subscriber)
+      </p>
+    );
+  }
+
+  // For non-subscribers, show remaining count
   return (
-    <div className={className}>
-      <strong>{remaining}</strong> of <strong>{limit}</strong> free summaries left today
-    </div>
+    <p className={className ?? "text-sm text-gray-700"} aria-live="polite">
+      <strong>{remaining}</strong> of <strong>{limit}</strong> free {label} left today
+    </p>
   );
 }
+
+export default ReadCounter;

@@ -1,8 +1,6 @@
-
-
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 
 interface PaywallModalProps {
@@ -16,12 +14,79 @@ export default function PaywallModal({
   open,
   onClose,
   remainingFreeReads = 0,
-  totalFreeReads = 3,
+  totalFreeReads = 7,
 }: PaywallModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const firstActionRef = useRef<HTMLAnchorElement>(null);
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    if (!open) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Prefer focusing the primary action; otherwise focus the panel for accessibility
+    const el = firstActionRef.current ?? panelRef.current;
+    el?.focus();
+  }, [open]);
+
+  function getFocusable(container: HTMLElement | null): HTMLElement[] {
+    if (!container) return [];
+    const selectors = [
+      'a[href]',
+      'button:not([disabled])',
+      'textarea:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])'
+    ].join(',');
+    return Array.from(container.querySelectorAll<HTMLElement>(selectors))
+      .filter((el) => !el.hasAttribute('disabled') && !el.getAttribute('aria-hidden'));
+  }
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const focusables = getFocusable(panel);
+      if (focusables.length === 0) return;
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !panel.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    panel.addEventListener('keydown', handleKeyDown);
+    return () => {
+      panel.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
   if (!open) return null;
 
-  const used = totalFreeReads - remainingFreeReads;
-  const percent = Math.min(100, Math.round((used / totalFreeReads) * 100));
+  const safeTotal = Math.max(1, totalFreeReads);
+  const used = Math.max(0, Math.min(safeTotal, safeTotal - remainingFreeReads));
+  const percent = Math.min(100, Math.round((used / safeTotal) * 100));
 
   return (
     <div
@@ -29,6 +94,8 @@ export default function PaywallModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="paywall-title"
+      aria-describedby="paywall-desc"
+      tabIndex={-1}
     >
       {/* Backdrop */}
       <button
@@ -37,7 +104,13 @@ export default function PaywallModal({
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
       />
 
-      <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl ring-1 ring-black/10 dark:bg-neutral-900 dark:ring-white/10 animate-scale-in">
+      <div
+        ref={panelRef}
+        className="relative w-full max-w-md rounded-xl bg-white shadow-xl ring-1 ring-black/10 dark:bg-neutral-900 dark:ring-white/10 animate-scale-in"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose();
+        }}
+      >
         <div className="flex items-start justify-between px-5 pt-5">
           <h2
             id="paywall-title"
@@ -66,10 +139,9 @@ export default function PaywallModal({
         </div>
 
         <div className="px-5 pb-5 pt-3 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300 space-y-4">
-          <p>
-            You’ve reached your free daily summaries limit ({totalFreeReads}). To
-            keep accessing culturally conscious, Black-centered news in our 5‑point
-            format, become a supporter.
+          <p id="paywall-desc">
+            You’ve hit today’s free summaries limit ({totalFreeReads}). Keep the
+            Black-centered, need‑to‑know breakdowns coming by becoming a supporter.
           </p>
 
           <div className="space-y-2">
@@ -96,9 +168,11 @@ export default function PaywallModal({
 
           <div className="flex flex-col gap-3 pt-2">
             <Link
+              ref={firstActionRef}
               href="/pricing"
               className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-neutral-900"
               prefetch={false}
+              autoFocus
             >
               Subscribe Now
             </Link>

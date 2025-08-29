@@ -45,29 +45,15 @@ type StoryCardProps = {
   /**
    * Preferred prop: provide the story/summary data here.
    */
-  summary?: NewsStory | SummaryItem;
-
-  /**
-   * @deprecated Use `summary` instead.
-   * Kept temporarily for backwards-compat with older usages.
-   */
-  story?: NewsStory | SummaryItem;
-
-  /**
-   * @deprecated Use `summary` instead.
-   * Kept temporarily for backwards-compat with older usages.
-   */
-  item?: NewsStory | SummaryItem;
+  summary: NewsStory | SummaryItem;
 
   isSaved?: boolean;
   onSaved?: (storyId: string) => void;
   locked?: boolean;
 };
 
-// Accept `summary` (preferred). `story` and `item` are deprecated shims.
-export default function StoryCard({ story: storyProp, summary, item, isSaved, onSaved, locked }: StoryCardProps) {
-  const resolved = storyProp ?? summary ?? item;
-  // TODO: After callers migrate, make `summary` required and remove `story`/`item`.
+export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCardProps) {
+  const story = summary;
 
   // Call hooks unconditionally (before any early returns)
   const titleId = useId();
@@ -75,9 +61,7 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<boolean>(Boolean(isSaved));
 
-  if (!resolved) return null;
-
-  const story: NewsStory | SummaryItem = resolved;
+  if (!story) return null;
 
   const isLocked = typeof locked === 'boolean' ? locked : (isSummaryItem(story) ? Boolean(story.locked) : false);
 
@@ -145,7 +129,7 @@ export default function StoryCard({ story: storyProp, summary, item, isSaved, on
       </h2>
 
       {story.imageUrl && (
-        <StoryImage src={story.imageUrl!} alt={story.title} />
+        <StoryImage src={story.imageUrl} alt={story.title} />
       )}
 
       {isSummaryItem(story) && (

@@ -9,6 +9,8 @@ import {
   ReactNode,
 } from "react";
 
+const QUOTA_ENDPOINT = "/api/user/read";
+
 // Quota context value: remaining summaries, total limit, subscription flag, and a refresh method
 export type QuotaContextValue = {
   remaining: number | null;
@@ -36,7 +38,7 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/user/read", { cache: "no-store" });
+      const res = await fetch(QUOTA_ENDPOINT, { cache: "no-store" });
       if (res.status === 401) {
         setRemaining(null);
         setLimit(null);
@@ -48,9 +50,12 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
       setRemaining(data.remaining);
       setLimit(data.limit);
       setHasActiveSub(data.hasActiveSub);
-    } catch (err) {
+    } catch (err: unknown) {
       if (process.env.NODE_ENV === "development") {
-        console.error("Error refreshing quota:", err);
+        console.error(
+          "Error refreshing quota:",
+          err instanceof Error ? err.message : err
+        );
       }
     } finally {
       setLoading(false);
@@ -58,7 +63,20 @@ export function ReadQuotaProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh();
+    let mounted = true;
+    // Initial fetch
+    void refresh();
+    // Periodic auto-refresh every 60s
+    const intervalId = setInterval(() => {
+      if (mounted) {
+        void refresh();
+      }
+    }, 60_000);
+
+    return () => {
+      mounted = false;
+      clearInterval(intervalId);
+    };
   }, [refresh]);
 
   return (
