@@ -95,11 +95,57 @@ export default async function DashboardPage() {
 
   let storyDocs: StoryDoc[] = [];
   try {
-    storyDocs = await db
+    const pipeline = [
+      { $match: { _id: { $in: validIds } } },
+      {
+        $addFields: {
+          _pubDate: {
+            $let: {
+              vars: { pa: "$publishedAt", ca: "$createdAt" },
+              in: {
+                $cond: [
+                  { $eq: [{ $type: "$$pa" }, "date"] },
+                  "$$pa",
+                  {
+                    $cond: [
+                      { $eq: [{ $type: "$$pa" }, "string"] },
+                      {
+                        $dateFromString: {
+                          dateString: "$$pa",
+                          onError: { $ifNull: ["$$ca", new Date(0)] },
+                          onNull: { $ifNull: ["$$ca", new Date(0)] },
+                        },
+                      },
+                      { $ifNull: ["$$ca", new Date(0)] },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      { $sort: { _pubDate: -1, _id: -1 } },
+      {
+        $project: {
+          _pubDate: 0,
+          title: 1,
+          url: 1,
+          oneLiner: 1,
+          bullets: 1,
+          summary: 1,
+          imageUrl: 1,
+          publishedAt: 1,
+          source: 1,
+          sources: 1,
+        },
+      },
+    ];
+
+    storyDocs = (await db
       .collection<StoryDoc>("stories")
-      .find({ _id: { $in: validIds } })
-      .sort({ publishedAt: -1 })
-      .toArray();
+      .aggregate(pipeline)
+      .toArray()) as StoryDoc[];
   } catch {
     return (
       <main className="max-w-5xl mx-auto px-4 py-8">
@@ -185,20 +231,7 @@ export default async function DashboardPage() {
       } satisfies SummaryItem;
     })
     // De-dupe by id just in case favorites contain duplicates
-    .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx)
-    // Newest first: prefer publishedAt; fallback to ObjectId timestamp
-    .sort((a, b) => {
-      const ts = (s: SummaryItem) => {
-        const t = Date.parse(s.publishedAt ?? "");
-        if (!Number.isNaN(t)) return t;
-        try {
-          return parseInt(s.id.slice(0, 8), 16) * 1000;
-        } catch {
-          return 0;
-        }
-      };
-      return ts(b) - ts(a);
-    });
+    .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx);
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">

@@ -1,6 +1,6 @@
 "use client";
 
-type SkeletonCardProps = {
+export type SkeletonCardProps = {
   /** Preset layout sizing */
   variant?: "full" | "compact";
   /** Number of bullet rows to render */
@@ -9,6 +9,12 @@ type SkeletonCardProps = {
   showImage?: boolean;
   /** Whether to include the subtle sources row at the bottom */
   showSources?: boolean;
+  /** Whether to include the color-note stripe (only used for full variant) */
+  showColorNote?: boolean;
+  /** Toggle the pulse animation */
+  animate?: boolean;
+  /** Optional class for the color-note stripe */
+  colorClass?: string;
   /** Additional class names for the outer wrapper */
   className?: string;
 };
@@ -30,9 +36,12 @@ function Placeholder({ className }: { className: string }) {
  */
 export default function SkeletonCard({
   variant = "full",
-  bullets = 4,
+  bullets,
   showImage = true,
   showSources = true,
+  showColorNote = true,
+  animate = true,
+  colorClass = "bg-blue-200 dark:bg-blue-800",
   className = "",
 }: SkeletonCardProps) {
   const imageHeight = variant === "full" ? "h-40" : "h-24";
@@ -47,13 +56,14 @@ export default function SkeletonCard({
 
   blocks.push({ key: "title", className: `h-6 ${titleWidth}` });
 
-  for (let i = 0; i < bullets; i++) {
+  const bulletCount = Math.max(0, bullets ?? (variant === "compact" ? 3 : 4));
+  for (let i = 0; i < bulletCount; i++) {
     blocks.push({ key: `bullet-${i}`, className: `h-4 ${bulletWidth}` });
   }
 
   // Only render "color-note" stripe for full variant
-  if (variant === "full") {
-    blocks.push({ key: "color-note", className: "h-4 w-2/3" });
+  if (variant === "full" && showColorNote) {
+    blocks.push({ key: "color-note", className: `h-4 w-2/3 ${colorClass}` });
   }
 
   if (showSources) {
@@ -68,7 +78,7 @@ export default function SkeletonCard({
     <div
       role="presentation"
       aria-hidden="true"
-      className={`border-b pb-4 animate-pulse space-y-2 ${className}`}
+      className={`border-b pb-4 ${animate ? "motion-safe:animate-pulse" : ""} space-y-2 ${className}`}
     >
       {blocks.map(({ key, className: cn }) => (
         <Placeholder key={key} className={cn} />

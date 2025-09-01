@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 
 const planLabel = process.env.NEXT_PUBLIC_STRIPE_PLAN_LABEL || "$5/month";
 
@@ -8,6 +8,7 @@ export default function SubscribeButton() {
   const [loading, setLoading] = useState(false);
   // Only use the public environment variable to avoid leaking secrets
   const priceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ID;
+  const disabled = !priceId;
 
   function getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
@@ -20,7 +21,8 @@ export default function SubscribeButton() {
 
   const handleSubscribe = async () => {
     if (!priceId) {
-      throw new Error("Stripe price ID is not configured. Please set NEXT_PUBLIC_STRIPE_PRICE_ID.");
+      alert("Stripe price ID is not configured. Please contact support.");
+      return;
     }
     setLoading(true);
     try {
@@ -64,9 +66,12 @@ export default function SubscribeButton() {
 
   return (
     <button
+      type="button"
       onClick={handleSubscribe}
       aria-label="Subscribe to Pro Plan"
-      disabled={loading}
+      aria-busy={loading}
+      disabled={loading || disabled}
+      title={!priceId ? "Subscription temporarily unavailable" : undefined}
       className={`mt-6 w-full px-4 py-3 rounded-lg font-semibold shadow-sm transition-colors duration-200 ${
         loading
           ? "bg-gray-400 cursor-not-allowed text-white"

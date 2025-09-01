@@ -3,19 +3,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { clientPromise } from "@/lib/mongoClient";
 
-export async function POST() {
+import { headers } from "next/headers";
+
+export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const userEmail = session.user.email.toLowerCase();
+
+  if (!stripe) {
+    return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+  }
 
   try {
     // Connect to DB
@@ -51,8 +57,16 @@ export async function POST() {
       );
     }
 
-    // Resolve price ID from environment (with legacy fallback)
-    let priceId = process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID;
+    // Optional body override for priceId (used sparingly)
+    let bodyPriceId: string | undefined;
+    try {
+      const body = await req.json();
+      bodyPriceId = typeof body?.priceId === "string" ? body.priceId : undefined;
+    } catch {
+      // ignore non-JSON body
+    }
+    // Resolve price ID from environment (with legacy fallback), prefer body override
+    let priceId = bodyPriceId || process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRO_PRICE_ID;
     // If a Product ID was provided, fetch its first active Price
     if (priceId?.startsWith("prod_")) {
       const priceList = await stripe.prices.list({
@@ -73,14 +87,17 @@ export async function POST() {
       throw new Error("Missing STRIPE_PRICE_ID environment variable");
     }
 
-    const origin =
-      process.env.NEXT_PUBLIC_SITE_URL && process.env.NEXT_PUBLIC_SITE_URL.length > 0
-        ? process.env.NEXT_PUBLIC_SITE_URL
-        : "http://localhost:3000";
-    if (!process.env.NEXT_PUBLIC_SITE_URL) {
-      console.warn(
-        "[stripe:checkout] NEXT_PUBLIC_SITE_URL not set; falling back to http://localhost:3000"
-      );
+    // Compute origin from request headers first, then env fallback
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+    const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+    const headerOrigin = `${proto}://${host}`;
+    const envOrigin = process.env.NEXT_PUBLIC_SITE_URL && process.env.NEXT_PUBLIC_SITE_URL.length > 0
+      ? process.env.NEXT_PUBLIC_SITE_URL
+      : undefined;
+    const origin = envOrigin ?? headerOrigin;
+    if (!envOrigin && host.startsWith("localhost")) {
+      console.warn("[stripe:checkout] NEXT_PUBLIC_SITE_URL not set; using header origin:", origin);
     }
 
     // Create Checkout Session (subscription)

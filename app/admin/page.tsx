@@ -1,6 +1,7 @@
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import AdminPanel from "./AdminPanel";
 
 /**
@@ -25,10 +26,13 @@ const FALLBACK_ADMINS =
 
 const allowedAdmins = allowedAdminsFromEnv.length > 0 ? allowedAdminsFromEnv : FALLBACK_ADMINS;
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Admin Dashboard - Kofa",
   description: "Manage Kofa platform settings and content.",
 };
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
@@ -36,10 +40,9 @@ export default async function AdminPage() {
   // Normalize to lowercase for comparison
   const email = session?.user?.email?.toLowerCase();
 
-  // If not logged in or not an allowed admin, redirect to sign-in
-  if (!email || !allowedAdmins.includes(email)) {
-    redirect("/api/auth/signin");
-  }
+  // If not logged in, send to sign-in; if logged in but not allowed, 404
+  if (!session) redirect("/api/auth/signin");
+  if (!email || !allowedAdmins.includes(email)) notFound();
 
   return <AdminPanel />;
 }

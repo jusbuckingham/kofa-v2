@@ -92,7 +92,7 @@ export default function AdminPanel() {
       </div>
 
       {message && (
-        <p className={`mt-2 ${colorClass}`}>${""}{message}</p>
+        <p className={`mt-2 ${colorClass}`} role="status" aria-live="polite">{message}</p>
       )}
 
       <p className="text-xs text-gray-500">

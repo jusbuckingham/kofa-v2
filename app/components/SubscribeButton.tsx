@@ -82,6 +82,7 @@ export default function SubscribeButton() {
   };
 
   const handleClick = async () => {
+    if (loading || status === 'loading') return;
     if (status !== 'authenticated' || !session) {
       const callbackUrl = typeof window !== 'undefined' ? window.location.href : '/';
       await signIn(undefined, { callbackUrl });
@@ -108,7 +109,8 @@ export default function SubscribeButton() {
       type="button"
       onClick={handleClick}
       disabled={disabled}
-      aria-label={label}
+      aria-busy={loading}
+      aria-disabled={disabled}
       className={`px-6 py-3 rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-400 ${
         disabled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
       }`}

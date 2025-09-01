@@ -1,4 +1,5 @@
 // app/api/stripe/webhooks/route.ts
+// NOTE: Ensure STRIPE_WEBHOOK_SECRET is the **LIVE** secret for the https://kofa.ai/api/stripe/webhooks endpoint.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -22,20 +23,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
 
-  let buf: ArrayBuffer;
+  let rawBody: string;
   try {
-    buf = await req.arrayBuffer();
+    rawBody = await req.text(); // must be the raw (unparsed) body
   } catch {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
   let event: Stripe.Event;
-
   try {
-    event = stripe.webhooks.constructEvent(
-      Buffer.from(buf),
-      sig,
-      STRIPE_WEBHOOK_SECRET
-    );
+    event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err: unknown) {
     console.error('❌ Webhook signature verification failed:', (err as Error).message);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
@@ -61,6 +57,7 @@ export async function POST(req: NextRequest) {
   ]);
 
   if (!relevant.has(event.type)) {
+    console.debug('[webhook] Ignored event type:', event.type, 'id:', event.id);
     return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   }
 
@@ -143,7 +140,8 @@ export async function POST(req: NextRequest) {
 
       case 'checkout.session.async_payment_failed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        const customerId = session.customer as string;
+        const customerId = session.customer as string | null;
+        if (!customerId) break;
         await users.updateOne(
           { stripeCustomerId: customerId },
           { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
@@ -185,7 +183,8 @@ export async function POST(req: NextRequest) {
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const customerId = invoice.customer as string;
+        const customerId = invoice.customer as string | null;
+        if (!customerId) break;
         await users.updateOne(
           { stripeCustomerId: customerId },
           { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
@@ -203,4 +202,12 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ error: 'Webhook error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, mode: 'webhook' }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+}
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 200, headers: { 'Cache-Control': 'no-store' } });
 }

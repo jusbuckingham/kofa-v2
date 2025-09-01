@@ -5,6 +5,8 @@ import { stripe } from '@/lib/stripe';
 import { clientPromise } from '@/lib/mongoClient';
 import type Stripe from 'stripe';
 
+const STRIPE_CONFIGURED = Boolean(stripe);
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -16,18 +18,22 @@ interface UserDoc {
 }
 
 function siteReturnUrl() {
-  return (
+  const raw =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXTAUTH_URL ||
-    'http://localhost:3000/dashboard'
-  );
+    'http://localhost:3000';
+  return raw.startsWith('http') ? `${raw.replace(/\/$/, '')}/dashboard` : `https://${raw.replace(/\/$/, '')}/dashboard`;
 }
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  if (!STRIPE_CONFIGURED) {
+    return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 
   try {
@@ -38,7 +44,7 @@ export async function GET() {
     const user = await users.findOne({ email }, { projection: { stripeCustomerId: 1 } });
 
     if (!user?.stripeCustomerId) {
-      return NextResponse.json({ data: null });
+      return NextResponse.json({ data: null }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     // Prefer an active/trialing subscription; fall back to most-recent otherwise
@@ -55,20 +61,52 @@ export async function GET() {
       sub = anyList.data.find(s => s.status !== 'canceled') ?? null;
     }
 
-    return NextResponse.json({
-      data: sub
-        ? {
+    if (sub) {
+      const item = sub.items.data[0];
+      const price = item?.price as Stripe.Price | undefined;
+
+      return NextResponse.json(
+        {
+          data: {
             id: sub.id,
             status: sub.status,
             cancel_at_period_end: sub.cancel_at_period_end ?? false,
             current_period_end: sub.current_period_end,
-            plan: sub.items.data[0]?.price?.nickname || sub.items.data[0]?.price?.id || 'unknown',
-          }
-        : null,
-    });
+            // Existing compact label for convenience
+            plan:
+              (price?.nickname as string | undefined) ||
+              (price?.id as string | undefined) ||
+              'unknown',
+            // New detailed pricing fields for UI
+            priceId: price?.id ?? null,
+            productId:
+              typeof price?.product === 'string'
+                ? (price?.product as string)
+                : (price?.product as Stripe.Product | undefined)?.id ?? null,
+            amount: price?.unit_amount ?? null, // amount in cents
+            currency: price?.currency ?? null,
+            interval: price?.recurring?.interval ?? null,
+            interval_count: price?.recurring?.interval_count ?? null,
+            nickname: price?.nickname ?? null,
+            // ISO string convenience (derived from current_period_end)
+            current_period_end_iso: sub.current_period_end
+              ? new Date(sub.current_period_end * 1000).toISOString()
+              : null,
+          },
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        data: null,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
@@ -83,12 +121,16 @@ export async function POST(req: Request) {
   const action: Action | undefined = body.action;
 
   if (action !== 'portal') {
-    return NextResponse.json({ error: 'unsupported_action' }, { status: 400 });
+    return NextResponse.json({ error: 'unsupported_action' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
 
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  if (!STRIPE_CONFIGURED) {
+    return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 
   try {
@@ -100,7 +142,7 @@ export async function POST(req: Request) {
 
     const customerId = user?.stripeCustomerId;
     if (!customerId) {
-      return NextResponse.json({ error: 'no_customer' }, { status: 400 });
+      return NextResponse.json({ error: 'no_customer' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const portal = await stripe.billingPortal.sessions.create({
@@ -108,9 +150,9 @@ export async function POST(req: Request) {
       return_url: siteReturnUrl(),
     });
 
-    return NextResponse.json({ url: portal.url });
+    return NextResponse.json({ url: portal.url }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'failed';
-    return NextResponse.json({ error: 'portal_error', message }, { status: 500 });
+    return NextResponse.json({ error: 'portal_error', message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }

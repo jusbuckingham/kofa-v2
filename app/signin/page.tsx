@@ -104,7 +104,14 @@ export default function SignInPage() {
         </form>
 
         <p className="mt-4 text-xs text-center text-gray-500">
-          By continuing, you agree to our Terms and acknowledge our Privacy Policy.
+          By continuing, you agree to our{' '}
+          <a href="/terms" className="underline hover:text-gray-700">
+            Terms
+          </a>{' '}
+          and acknowledge our{' '}
+          <a href="/privacy" className="underline hover:text-gray-700">
+            Privacy Policy
+          </a>.
         </p>
       </div>
     </div>

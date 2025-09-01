@@ -18,6 +18,7 @@ type Sub = {
   status: SubStatus;
   current_period_end: number; // epoch seconds
   plan: string; // human label we compute server-side
+  cancel_at_period_end?: boolean; // whether it will end at period end
 };
 
 function Spinner({ className = '' }: { className?: string }) {
@@ -25,7 +26,7 @@ function Spinner({ className = '' }: { className?: string }) {
     <svg
       className={`h-4 w-4 animate-spin ${className}`}
       viewBox="0 0 24 24"
-      aria-hidden
+      aria-hidden="true"
     >
       <circle
         className="opacity-25"
@@ -96,7 +97,7 @@ export default function ManageSubscriptionPage() {
     }
   };
 
-  if (status === 'loading') return <p className="px-4 py-6">Checking session…</p>;
+  if (status === 'loading') return <p className="px-4 py-6" role="status" aria-live="polite">Checking session…</p>;
   if (status !== 'authenticated') {
     return (
       <section className="mx-auto max-w-2xl px-4 py-10">
@@ -169,7 +170,7 @@ export default function ManageSubscriptionPage() {
       <h1 className="text-2xl font-semibold">Manage Subscription</h1>
 
       {error && (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200" role="status" aria-live="polite">
           {error}
         </div>
       )}
@@ -182,11 +183,15 @@ export default function ManageSubscriptionPage() {
           </div>
           <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${statusBadgeColor[sub.status]}`}>
             <span className="h-2 w-2 rounded-full bg-current" />
-            {sub.status.replace('_', ' ')}
+            {sub.status.replace(/_/g, ' ')}
           </span>
         </div>
         <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-300">
-          Next renewal: <span className="font-medium">{endDate}</span>
+          {sub.cancel_at_period_end || sub.status === 'canceled' ? (
+            <>Ends on: <span className="font-medium">{endDate}</span></>
+          ) : (
+            <>Next renewal: <span className="font-medium">{endDate}</span></>
+          )}
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <button

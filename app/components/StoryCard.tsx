@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useState } from "react";
+import { useId, useState } from "react";
 import { FiBookmark, FiShare2 } from "react-icons/fi";
 import Link from "next/link";
 import Image from "next/image";
@@ -66,12 +66,26 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
 
   const isLocked = typeof locked === 'boolean' ? locked : (isSummaryItem(story) ? Boolean(story.locked) : false);
 
+  const publishedISO = (
+    ("publishedAt" in story && story.publishedAt)
+      ? (() => {
+          try {
+            const d = new Date(story.publishedAt as unknown as string | number | Date);
+            return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined
+  );
+
   function enforceLen(s?: string, max = 120): string {
     if (!s) return "";
     return s.length > max ? s.slice(0, max - 1).trim() + "…" : s;
   }
 
   const handleToggleSave = async () => {
+    if (saving) return;
     if (!("id" in story) || !story.id) return;
     setSaving(true);
     setSaveError(null);
@@ -136,7 +150,7 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
       {( ("url" in story && story.url) || ("publishedAt" in story && story.publishedAt)) && (
         <div className="mb-3 -mt-1 text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
           {"publishedAt" in story && story.publishedAt ? (
-            <time dateTime={new Date(story.publishedAt).toISOString()}>
+            <time dateTime={publishedISO}>
               {formatDate(story.publishedAt)}
             </time>
           ) : null}
@@ -178,6 +192,7 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
                 saved ? "bg-green-500 text-white hover:bg-green-600" : "bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-zinc-800 dark:text-gray-100 dark:hover:bg-zinc-700"
               }`}
               aria-label={saved ? "Unsave this story" : "Save this story"}
+              aria-pressed={saved}
             >
               <FiBookmark className={`w-4 h-4 ${saved ? "animate-pulse" : ""}`} />
               {saved ? "Saved" : "Save"}

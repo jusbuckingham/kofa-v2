@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth';
 import { stripe } from '@/lib/stripe';
 import { clientPromise } from '@/lib/mongoClient';
 
+const NO_STORE = { 'Cache-Control': 'no-store' } as const;
+const STRIPE_CONFIGURED = Boolean(stripe);
+
 export const runtime = 'nodejs';
 
 /**
@@ -15,7 +18,11 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
+    }
+
+    if (!STRIPE_CONFIGURED) {
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: NO_STORE });
     }
 
     const email = session.user.email.toLowerCase();
@@ -30,7 +37,7 @@ export async function POST(req: Request) {
     if (!user?.stripeCustomerId) {
       return NextResponse.json(
         { error: 'No Stripe customer found for user' },
-        { status: 404 }
+        { status: 404, headers: NO_STORE }
       );
     }
 
@@ -62,7 +69,7 @@ export async function POST(req: Request) {
     if (!cancelable) {
       return NextResponse.json(
         { error: 'No active/trialing subscription to cancel' },
-        { status: 404 }
+        { status: 404, headers: NO_STORE }
       );
     }
 
@@ -79,7 +86,7 @@ export async function POST(req: Request) {
             ? new Date(canceled.ended_at * 1000).toISOString()
             : null,
         },
-        { status: 200 }
+        { status: 200, headers: NO_STORE }
       );
     }
 
@@ -100,11 +107,11 @@ export async function POST(req: Request) {
         endsAt,
         status: updated.status,
       },
-      { status: 200 }
+      { status: 200, headers: NO_STORE }
     );
   } catch (err) {
     console.error('[stripe.cancel] error:', err);
     const message = err instanceof Error ? err.message : 'Internal Server Error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: NO_STORE });
   }
 }
