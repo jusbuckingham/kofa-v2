@@ -3,12 +3,12 @@ import React, { useEffect, useRef, useState } from "react";
 import type { SummaryItem } from "../types";
 import StoryCard from "./StoryCard";
 
-interface NewsResponse { ok: boolean; stories: SummaryItem[]; total: number }
-interface QuotaResponse { remaining: number | null; limit: number | null; hasActiveSub: boolean }
-
 interface NewsTickerProps {
   initialSummaries?: SummaryItem[];
 }
+
+interface NewsResponse { ok: boolean; stories: SummaryItem[]; total: number }
+interface QuotaResponse { remaining: number | null; limit: number | null; hasActiveSub: boolean }
 
 // Helper to merge and de‑duplicate by a stable key (id fallback to url)
 // This is generic for any item with id or url.
@@ -23,6 +23,10 @@ function mergeUnique<T extends { id?: string | number; url?: string }>(prev: T[]
   return Array.from(map.values());
 }
 
+const parseDate = (d?: string | Date) => (d ? new Date(d) : new Date(0));
+const sortByPublishedDesc = <T extends { publishedAt?: string | Date }>(arr: T[]): T[] =>
+  [...arr].sort((a, b) => parseDate(b.publishedAt).getTime() - parseDate(a.publishedAt).getTime());
+
 export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): JSX.Element {
   const [summaries, setSummaries] = useState<SummaryItem[]>(initialSummaries);
   const [page, setPage] = useState(1);
@@ -32,7 +36,19 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
   const [hasActiveSub, setHasActiveSub] = useState<boolean>(false);
   const [freeLimit, setFreeLimit] = useState<number>(7); // align with product policy
 
+  // In-flight and debounce guards
+  const inFlightRef = useRef(false);
+  const lastLoadTsRef = useRef(0);
+
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+
+  // Ephemeral toast for network errors
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    // auto-hide after 3s
+    window.setTimeout(() => setToast(null), 3000);
+  };
 
   const hasInitial = useRef<boolean>(initialSummaries.length > 0);
 
@@ -48,6 +64,12 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
 
   // Load more stories (next page); disables loading on error or no more data.
   const loadMore = async (): Promise<void> => {
+    const now = Date.now();
+    if (!hasMore) return;
+    // simple debounce: ignore clicks within 600ms or if already in-flight
+    if (inFlightRef.current || now - lastLoadTsRef.current < 600) return;
+    lastLoadTsRef.current = now;
+    inFlightRef.current = true;
     setLoading(true);
     setError(null);
     const ac = new AbortController();
@@ -64,11 +86,15 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
         setHasMore(false);
         return;
       }
-      setSummaries(prev => mergeUnique(prev, data));
+      const ordered = sortByPublishedDesc(data);
+      setSummaries(prev => mergeUnique(prev, ordered));
       setPage(prev => prev + 1);
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : String(err));
+      showToast(err instanceof Error ? err.message : String(err));
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
       // No need to abort here; aborting in finally can cancel the just-completed fetch.
     }
@@ -86,7 +112,11 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
           if (!cancelled) {
             // Quota logic: set freeLimit and subscription status.
             setHasActiveSub(Boolean((data as QuotaResponse)?.hasActiveSub));
-            if (typeof (data as QuotaResponse)?.limit === 'number') setFreeLimit((data as QuotaResponse).limit!);
+            if (typeof (data as QuotaResponse)?.limit === 'number') {
+              setFreeLimit((data as QuotaResponse).limit as number);
+            } else {
+              setFreeLimit(7);
+            }
           }
         }
       } catch {
@@ -100,7 +130,9 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
           const favs = (await f.json()) as unknown;
           // Saved IDs logic: only use string ids
           if (!cancelled && Array.isArray(favs)) {
-            setSavedIds(new Set((favs as { id?: string }[]).map(x => x.id).filter(Boolean) as string[]));
+            setSavedIds(new Set((favs as { id?: string; url?: string }[])
+              .map(x => (x.id ?? x.url)?.toString())
+              .filter((v): v is string => Boolean(v))));
           }
         }
       } catch {
@@ -109,6 +141,8 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
       // If no initial summaries were provided, fetch the first page so the ticker isn't empty.
       if (!cancelled && !hasInitial.current) {
         try {
+          if (inFlightRef.current) return;
+          inFlightRef.current = true;
           setLoading(true);
           const r0 = await fetch('/api/news/get?page=1', { cache: 'no-store', signal: ac.signal });
           if (r0.ok) {
@@ -116,7 +150,8 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
             const data0 = Array.isArray((j0 as NewsResponse)?.stories)
               ? (j0 as NewsResponse).stories
               : [];
-            setSummaries(prev => mergeUnique(prev, data0));
+            const ordered0 = sortByPublishedDesc(data0);
+            setSummaries(prev => mergeUnique(prev, ordered0));
             setHasMore(data0.length > 0);
             setPage(1);
           }
@@ -124,6 +159,7 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
           // ignore initial fetch error
         } finally {
           hasInitial.current = true;
+          inFlightRef.current = false;
           setLoading(false);
         }
       }
@@ -164,8 +200,9 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
       <div className="mt-6 flex justify-center">
         {hasMore && (
           <button
+            aria-label="Load more summaries"
             onClick={loadMore}
-            disabled={loading}
+            disabled={loading || !hasMore}
             className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
           >
             {loading ? "Loading..." : "Load more"}
@@ -175,6 +212,15 @@ export default function NewsTicker({ initialSummaries = [] }: NewsTickerProps): 
           <p className="mt-6 text-center text-gray-500">No more summaries</p>
         )}
       </div>
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded bg-black/80 px-4 py-2 text-sm text-white shadow-lg"
+        >
+          {toast}
+        </div>
+      )}
     </>
   );
 }

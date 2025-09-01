@@ -1,3 +1,34 @@
+// ---- Provider & candidate shapes (strong typing, no `any`) ----
+type ProviderArticle = {
+  title?: string;
+  url?: string;
+  description?: string;
+  content?: string;
+  snippet?: string;
+  summary?: string;
+  publishedAt?: string;
+  imageUrl?: string;
+};
+
+type Candidate = {
+  title: string;
+  url: string;
+  description: string;
+  publishedAt?: string;
+  imageUrl?: string;
+};
+
+function toCandidate(a: ProviderArticle): Candidate | null {
+  const url = normalizeUrl(a.url);
+  if (!url) return null;
+  return {
+    title: a.title ?? "Untitled",
+    url,
+    description: a.description ?? a.content ?? a.snippet ?? a.summary ?? "",
+    publishedAt: a.publishedAt,
+    imageUrl: a.imageUrl,
+  };
+}
 /**
  * lib/fetchNews.ts
  * Aggregates news from external providers (NewsData → GNews → RSS fallback),
@@ -396,13 +427,7 @@ export async function fetchNewsFromSource(): Promise<{
   const debug = { fetched: 0, afterHard: 0, afterFilters: 0, toSummarize: 0, inserted: 0, modified: 0, matched: 0 };
 
   const seen = new Set<string>();
-  const candidates: Array<{
-    title: string;
-    url: string;
-    description: string;
-    publishedAt?: string;
-    imageUrl?: string;
-  }> = [];
+  const candidates: Candidate[] = [];
 
   // 1) Primary: NewsData.io
   try {
@@ -413,17 +438,12 @@ export async function fetchNewsFromSource(): Promise<{
       to: undefined,
     });
     for (const a of nd) {
-      const art = a as unknown as { title?: string; url?: string; description?: string; content?: string; snippet?: string; summary?: string; publishedAt?: string; imageUrl?: string };
-      const url = normalizeUrl(art.url);
-      if (!url || seen.has(url)) continue;
-      seen.add(url);
-      candidates.push({
-        title: art.title ?? "Untitled",
-        url,
-        description: art.description ?? art.content ?? art.snippet ?? art.summary ?? "",
-        publishedAt: art.publishedAt,
-        imageUrl: art.imageUrl,
-      });
+      const art = a as ProviderArticle;
+      const cand = toCandidate(art);
+      if (!cand) continue;
+      if (seen.has(cand.url)) continue;
+      seen.add(cand.url);
+      candidates.push(cand);
     }
   } catch {
     // fall through to GNews
@@ -437,17 +457,12 @@ export async function fetchNewsFromSource(): Promise<{
         lang: "en",
       });
       for (const a of g) {
-        const art = a as unknown as { title?: string; url?: string; description?: string; content?: string; snippet?: string; summary?: string; publishedAt?: string; imageUrl?: string };
-        const url = normalizeUrl(art.url);
-        if (!url || seen.has(url)) continue;
-        seen.add(url);
-        candidates.push({
-          title: art.title ?? "Untitled",
-          url,
-          description: art.description ?? art.content ?? art.snippet ?? art.summary ?? "",
-          publishedAt: art.publishedAt,
-          imageUrl: art.imageUrl,
-        });
+        const art = a as ProviderArticle;
+        const cand = toCandidate(art);
+        if (!cand) continue;
+        if (seen.has(cand.url)) continue;
+        seen.add(cand.url);
+        candidates.push(cand);
       }
     } catch {
       // still nothing—return gracefully
@@ -475,7 +490,7 @@ export async function fetchNewsFromSource(): Promise<{
       "https://www.essence.com/feed/",
     ];
     const feeds = feedsEnv.length ? feedsEnv : defaultFeeds;
-    const rssResults: typeof candidates = [];
+    const rssResults: Candidate[] = [];
     for (const f of feeds.slice(0, 20)) { // consider more feeds; rate-limited by per-run caps
       const items = await fetchRssFeed(f);
       for (const it of items) {
@@ -594,12 +609,15 @@ export async function fetchNewsFromSource(): Promise<{
 
     const canonicalUrl = c.url;
     const stableId = makeStableId(canonicalUrl, getDomain(canonicalUrl), c.title ?? "");
+    const publishedAtDate = (c.publishedAt && !Number.isNaN(Date.parse(c.publishedAt)))
+      ? new Date(c.publishedAt)
+      : new Date();
     const doc: StoryDoc = {
       id: stableId,
       title: c.title ?? "Untitled",
       url: canonicalUrl,
       summary,
-      publishedAt: c.publishedAt ? new Date(c.publishedAt) : new Date(),
+      publishedAt: publishedAtDate,
       createdAt: new Date(),
       imageUrl: c.imageUrl,
       source: getDomain(canonicalUrl),

@@ -29,9 +29,16 @@ export default function NewsList() {
   const firstLoadRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [lastReqOffset, setLastReqOffset] = useState<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // fetch page
   const fetchPage = async (nextOffset: number): Promise<void> => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLastReqOffset(nextOffset);
     setLoading(true);
     setError(null);
@@ -39,11 +46,12 @@ export default function NewsList() {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
         offset: String(nextOffset),
-        sort: 'publishedAt',
+        sort: '-publishedAt',
       });
       const res = await fetch(`/api/news/get?${params.toString()}`, {
         method: 'GET',
         cache: 'no-store',
+        signal: controller.signal,
       });
       if (!res.ok) {
         setError(`Failed to load stories (status ${res.status}).`);
@@ -57,12 +65,14 @@ export default function NewsList() {
           return unique;
         });
         setHasMore(data.hasMore);
-        setOffset(nextOffset + PAGE_SIZE);
+        setOffset(nextOffset + data.stories.length);
       } catch {
         setError('Failed to parse stories data.');
       }
-    } catch {
-      setError('Network error while fetching stories.');
+    } catch (err: unknown) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        setError('Network error while fetching stories.');
+      }
     } finally {
       setLoading(false);
     }
@@ -73,6 +83,11 @@ export default function NewsList() {
     if (firstLoadRef.current) return;
     firstLoadRef.current = true;
     fetchPage(0);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
 
   // how many can be shown without blur

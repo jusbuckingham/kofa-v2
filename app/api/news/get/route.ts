@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   const q           = searchParams.get("q")?.trim() || ""; // free-text
   const fromStr     = searchParams.get("from");     // ISO date string
   const toStr       = searchParams.get("to");       // ISO date string
-  const sortParam   = searchParams.get("sort") || "-publishedAt"; // "-publishedAt" | "publishedAt"
+  const sortParam = (searchParams.get("sort") || "-publishedAt").trim(); // "-publishedAt" | "publishedAt"
 
   // Helper to derive a domain from a URL
   const toDomain = (u: string | undefined): string | null => {
@@ -122,8 +122,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Determine sort
-  const sort: Record<string, 1 | -1> = sortParam === "publishedAt" ? { publishedAt: 1 } : { publishedAt: -1 };
+  // Determine sort (newest first by default). We'll compute a coerced date sort key in aggregation.
+  const orderParam = (searchParams.get("order") || "").toLowerCase();
+  // Newest-first unless caller explicitly asks for oldest
+  // Accept: sort=oldest | sort=publishedAt | sort=asc | order=asc to flip to ascending
+  const sortNewestFirst = !(
+    sortParam === "publishedAt" ||
+    sortParam === "oldest" ||
+    sortParam === "asc" ||
+    orderParam === "asc"
+  );
 
   const client = await clientPromise;
   const db     = client.db(process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "kofa");
@@ -138,10 +146,43 @@ export async function GET(req: NextRequest) {
   const col    = db.collection("stories");
 
   const total = await col.countDocuments(filter);
-  // fetch raw documents matching filters
-  const docs = (await col
-    .find<SummaryDoc>(filter, {
-      projection: {
+
+  // Use aggregation to coerce mixed-type publishedAt into a real date for sorting
+  const pipeline: Document[] = [
+    { $match: filter },
+    {
+      $addFields: {
+        _pubDate: {
+          $let: {
+            vars: { pa: "$publishedAt", ca: "$createdAt" },
+            in: {
+              $cond: [
+                { $eq: [ { $type: "$$pa" }, "date" ] },
+                "$$pa",
+                {
+                  $cond: [
+                    { $eq: [ { $type: "$$pa" }, "string" ] },
+                    {
+                      $dateFromString: {
+                        dateString: "$$pa",
+                        onError: { $ifNull: [ "$$ca", new Date(0) ] },
+                        onNull: { $ifNull: [ "$$ca", new Date(0) ] },
+                      }
+                    },
+                    { $ifNull: [ "$$ca", new Date(0) ] }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    { $sort: { _pubDate: sortNewestFirst ? -1 : 1, _id: -1 } },
+    { $skip: offset },
+    { $limit: limit },
+    {
+      $project: {
         id: 1,
         title: 1,
         url: 1,
@@ -152,12 +193,11 @@ export async function GET(req: NextRequest) {
         bullets: 1,
         colorNote: 1,
         sources: 1,
-      },
-    })
-    .sort(sort)
-    .skip(offset)
-    .limit(limit)
-    .toArray()) as SummaryDoc[];
+      }
+    }
+  ];
+
+  const docs = (await col.aggregate<SummaryDoc>(pipeline).toArray()) as SummaryDoc[];
 
   const session = await getServerSession(authOptions);
   const email = session?.user?.email;
@@ -218,12 +258,49 @@ export async function GET(req: NextRequest) {
   const includeMeta = searchParams.get("meta") === "1" || searchParams.get("includeMeta") === "1";
   if (includeMeta) {
     const distinctSources = await col.distinct("source", filter);
-    const latestDoc = await col.find(filter).sort({ publishedAt: -1 }).limit(1).toArray();
+    const latestDoc = await col.aggregate([
+      { $match: filter },
+      { $addFields: { _pubDate: {
+        $let: {
+          vars: { pa: "$publishedAt", ca: "$createdAt" },
+          in: {
+            $cond: [
+              { $eq: [ { $type: "$$pa" }, "date" ] },
+              "$$pa",
+              {
+                $cond: [
+                  { $eq: [ { $type: "$$pa" }, "string" ] },
+                  {
+                    $dateFromString: {
+                      dateString: "$$pa",
+                      onError: { $ifNull: [ "$$ca", new Date(0) ] },
+                      onNull: { $ifNull: [ "$$ca", new Date(0) ] },
+                    }
+                  },
+                  { $ifNull: [ "$$ca", new Date(0) ] }
+                ]
+              }
+            ]
+          }
+        }
+      } } },
+      { $sort: { _pubDate: -1 } },
+      { $limit: 1 },
+      { $project: { publishedAt: 1 } }
+    ]).toArray();
+    const sample = docs.slice(0, 3).map((d) => ({
+      id: d.id || d._id.toString(),
+      publishedAt: d.publishedAt,
+    }));
     meta = {
       sources: distinctSources, // e.g., ["BBC", "NYTimes", ...]
       latestPublishedAt: latestDoc[0]?.publishedAt instanceof Date
         ? latestDoc[0].publishedAt.toISOString()
         : latestDoc[0]?.publishedAt ?? null,
+      ordering: {
+        newestFirst: sortNewestFirst,
+        sample,
+      },
     };
   }
 

@@ -115,54 +115,90 @@ export default async function DashboardPage() {
   type StorySourceEntry = NonNullable<StoryDoc["sources"]>[number];
 
   // ===== Map to SummaryItem =====
-  const stories: SummaryItem[] = storyDocs.map((doc: StoryDoc) => {
-    const url = doc.url ?? "";
-    const publishedAt =
-      doc.publishedAt instanceof Date
-        ? doc.publishedAt.toISOString()
-        : typeof doc.publishedAt === "string"
-        ? doc.publishedAt
-        : "";
+  const stories: SummaryItem[] = storyDocs
+    .map((doc: StoryDoc) => {
+      const url = doc.url ?? "";
+      const publishedAt =
+        doc.publishedAt instanceof Date
+          ? doc.publishedAt.toISOString()
+          : typeof doc.publishedAt === "string"
+          ? doc.publishedAt
+          : "";
 
-    return {
-      id: doc._id.toString(),
-      title: doc.title ?? "Untitled",
-      url,
-      oneLiner: (doc.oneLiner ?? doc.summary?.oneLiner ?? "").trim(),
-      bullets: (() => {
-        const b = Array.isArray(doc.bullets)
-          ? doc.bullets
-          : Array.isArray(doc.summary?.bullets)
-          ? doc.summary!.bullets
-          : [];
-        const four = b.slice(0, 4);
-        while (four.length < 4) four.push("");
-        return four;
-      })(),
-      colorNote: "",
-      imageUrl: doc.imageUrl ?? undefined,
-      publishedAt,
-      source: doc.source ?? (url ? new URL(url).hostname.replace(/^www\./, "") : ""),
-      sources: Array.isArray(doc.sources)
-        ? (doc.sources as NonNullable<StoryDoc["sources"]>).map((src: StorySourceEntry) => {
-            if (typeof src === "object" && src !== null) {
-              const t = String(src.title ?? "");
-              const d = String(src.domain ?? (src.url ? new URL(src.url).hostname.replace(/^www\./, "") : t));
-              const u = String(src.url ?? "");
-              return { title: t || d, domain: d, url: u };
-            }
-            const safe = String(src ?? "");
-            try {
-              const u = new URL(safe);
-              const host = u.hostname.replace(/^www\./, "");
-              return { title: host, domain: host, url: safe };
-            } catch {
-              return { title: safe, domain: safe, url: safe };
-            }
-          })
-        : [],
-    } satisfies SummaryItem;
-  });
+      const safeHost = (() => {
+        if (!url) return "";
+        try {
+          return new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          return "";
+        }
+      })();
+
+      return {
+        id: doc._id.toString(),
+        title: doc.title ?? "Untitled",
+        url,
+        oneLiner: (doc.oneLiner ?? doc.summary?.oneLiner ?? "").trim(),
+        bullets: (() => {
+          const b = Array.isArray(doc.bullets)
+            ? doc.bullets
+            : Array.isArray(doc.summary?.bullets)
+            ? doc.summary!.bullets
+            : [];
+          const four = b.slice(0, 4);
+          while (four.length < 4) four.push("");
+          return four;
+        })(),
+        colorNote: "",
+        imageUrl: doc.imageUrl ?? undefined,
+        publishedAt,
+        source: doc.source ?? safeHost,
+        sources: Array.isArray(doc.sources)
+          ? (doc.sources as NonNullable<StoryDoc["sources"]>).map((src: StorySourceEntry) => {
+              if (typeof src === "object" && src !== null) {
+                const t = String(src.title ?? "");
+                const d = String(
+                  src.domain ??
+                    (src.url
+                      ? (() => {
+                          try {
+                            return new URL(src.url as string).hostname.replace(/^www\./, "");
+                          } catch {
+                            return t;
+                          }
+                        })()
+                      : t)
+                );
+                const u = String(src.url ?? "");
+                return { title: t || d, domain: d, url: u };
+              }
+              const safe = String(src ?? "");
+              try {
+                const u = new URL(safe);
+                const host = u.hostname.replace(/^www\./, "");
+                return { title: host, domain: host, url: safe };
+              } catch {
+                return { title: safe, domain: safe, url: safe };
+              }
+            })
+          : [],
+      } satisfies SummaryItem;
+    })
+    // De-dupe by id just in case favorites contain duplicates
+    .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx)
+    // Newest first: prefer publishedAt; fallback to ObjectId timestamp
+    .sort((a, b) => {
+      const ts = (s: SummaryItem) => {
+        const t = Date.parse(s.publishedAt ?? "");
+        if (!Number.isNaN(t)) return t;
+        try {
+          return parseInt(s.id.slice(0, 8), 16) * 1000;
+        } catch {
+          return 0;
+        }
+      };
+      return ts(b) - ts(a);
+    });
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-8">

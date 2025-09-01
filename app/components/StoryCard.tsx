@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useId, useState } from "react";
-import { FiBookmark, FiShare2, FiExternalLink } from "react-icons/fi";
+import { FiBookmark, FiShare2 } from "react-icons/fi";
 import Link from "next/link";
 import Image from "next/image";
 import type { NewsStory, SummaryItem } from "../types";
+import formatDate from "../utils/formatDate";
 
 const hostFromUrl = (u?: string) => {
   if (!u) return "";
@@ -132,6 +133,22 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
         <StoryImage src={story.imageUrl} alt={story.title} />
       )}
 
+      {( ("url" in story && story.url) || ("publishedAt" in story && story.publishedAt)) && (
+        <div className="mb-3 -mt-1 text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
+          {"publishedAt" in story && story.publishedAt ? (
+            <time dateTime={new Date(story.publishedAt).toISOString()}>
+              {formatDate(story.publishedAt)}
+            </time>
+          ) : null}
+          {("publishedAt" in story && story.publishedAt) && ("url" in story && story.url) ? (
+            <span aria-hidden="true">•</span>
+          ) : null}
+          {"url" in story && story.url ? (
+            <span>{hostFromUrl(story.url)}</span>
+          ) : null}
+        </div>
+      )}
+
       {isSummaryItem(story) && (
         <>
           <div className="mb-3 rounded-md border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/40 px-3 py-2">
@@ -182,20 +199,6 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
             )}
           </div>
         </>
-      )}
-      {"url" in story && story.url && (
-        <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-          Source:{" "}
-          <a
-            href={story.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 underline hover:no-underline"
-          >
-            {hostFromUrl(story.url) || "Original"}
-            <FiExternalLink className="w-3 h-3 opacity-80" />
-          </a>
-        </p>
       )}
 
       {isLocked && (
