@@ -5,7 +5,6 @@ import { stripe } from '@/lib/stripe';
 import { clientPromise } from '@/lib/mongoClient';
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const STRIPE_CONFIGURED = Boolean(stripe);
 
 export const runtime = 'nodejs';
 
@@ -21,7 +20,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
     }
 
-    if (!STRIPE_CONFIGURED) {
+    if (!stripe) {
       return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: NO_STORE });
     }
 
