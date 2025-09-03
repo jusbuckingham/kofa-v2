@@ -10,21 +10,24 @@ export const isMongoConfigured = Boolean(uri && dbName);
 
 // Use a global to prevent exhausting connections in dev/HMR
 const g = globalThis as typeof globalThis & { _mongoClientPromise?: Promise<MongoClient> };
-let clientPromise: Promise<MongoClient> | null = null;
+let _clientPromise: Promise<MongoClient> | null = null;
 
 function getClientPromise(): Promise<MongoClient> {
   if (!isMongoConfigured) {
     throw new Error("MongoDB not configured: set MONGODB_URI and MONGODB_DB_NAME (or MONGODB_DB)");
   }
-  if (!clientPromise) {
+  if (!_clientPromise) {
     const client = new MongoClient(uri!);
-    clientPromise =
+    _clientPromise =
       process.env.NODE_ENV === "development"
         ? g._mongoClientPromise || (g._mongoClientPromise = client.connect())
         : client.connect();
   }
-  return clientPromise;
+  return _clientPromise;
 }
+
+// Back-compat: some routes import { clientPromise } directly
+export const clientPromise: Promise<MongoClient> = getClientPromise();
 
 export async function getDb() {
   const c = await getClientPromise();
