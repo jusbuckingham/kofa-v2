@@ -6,6 +6,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { incrementSummaryView, peekSummaryQuota } from "@/lib/quota";
 
+interface SessionToken {
+  email?: string;
+  hasActiveSub?: boolean;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN ?? "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
@@ -22,6 +27,7 @@ export async function OPTIONS() {
 // GET = just check quota
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const sessionHasActive = Boolean((token as SessionToken)?.hasActiveSub);
 
   // If the user is not signed in, return a safe default so the UI can render limits client-side.
   if (!token?.email) {
@@ -41,6 +47,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         ...res,
+        hasActiveSub: res.hasActiveSub || sessionHasActive,
+        // Pro users are always allowed regardless of count
+        allowed: sessionHasActive ? true : res.allowed,
         limit: FREE_SUMMARIES_PER_DAY,
       },
       { headers: { ...corsHeaders, "Cache-Control": "no-store" } }
@@ -68,6 +77,34 @@ export async function POST(req: NextRequest) {
       { error: "Unauthorized" },
       { status: 401, headers: { ...corsHeaders, "Cache-Control": "no-store" } }
     );
+  }
+
+  const sessionHasActive = Boolean((token as SessionToken)?.hasActiveSub);
+
+  // If session indicates Pro, do not increment or throttle—return allowed immediately
+  if (sessionHasActive) {
+    try {
+      const peek = await peekSummaryQuota(token.email);
+      return NextResponse.json(
+        {
+          ...peek,
+          hasActiveSub: true,
+          allowed: true,
+          limit: FREE_SUMMARIES_PER_DAY,
+        },
+        { headers: { ...corsHeaders, "Cache-Control": "no-store" } }
+      );
+    } catch {
+      return NextResponse.json(
+        {
+          hasActiveSub: true,
+          allowed: true,
+          summariesToday: 0,
+          limit: FREE_SUMMARIES_PER_DAY,
+        },
+        { headers: { ...corsHeaders, "Cache-Control": "no-store" } }
+      );
+    }
   }
 
   let increment = true;
@@ -105,6 +142,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ...res,
+        hasActiveSub: res.hasActiveSub || sessionHasActive,
+        allowed: sessionHasActive ? true : res.allowed,
         limit: FREE_SUMMARIES_PER_DAY,
       },
       { headers: { ...corsHeaders, "Cache-Control": "no-store" } }

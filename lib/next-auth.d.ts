@@ -24,5 +24,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     hasActiveSub?: boolean;
     stripeCustomerId?: string | null;
+    /** internal cache timestamp for metadata lookups */
+    metaCheckedAt?: number;
   }
 }

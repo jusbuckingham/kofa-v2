@@ -47,28 +47,36 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       const t = token as ExtendedJWT;
-      // Re-check DB at most every 10 minutes to keep token small & fast.
-      const TEN_MIN = 10 * 60 * 1000;
+      // Re-check DB periodically. Use a short TTL when token shows no sub so upgrades reflect quickly.
+      const POS_TTL = 10 * 60 * 1000; // 10 min when active
+      const NEG_TTL = 30 * 1000;      // 30 sec when inactive
       const now = Date.now();
       // When a user first logs in, "user" is defined. On subsequent calls, only the token is available.
       const email = user?.email || t.email;
       if (!email) return t;
 
-      // Avoid extra queries if values exist and were checked recently
+      const ttl = t.hasActiveSub ? POS_TTL : NEG_TTL;
       if (
-        typeof t.hasActiveSub !== "undefined" &&
         typeof t.stripeCustomerId !== "undefined" &&
         typeof t.metaCheckedAt === "number" &&
-        now - t.metaCheckedAt < TEN_MIN
+        now - t.metaCheckedAt < ttl
       ) {
         return t;
       }
 
       const db = await getDb();
-      const coll = db.collection("user_metadata");
-      const dbUser = await coll.findOne({ email });
+      interface DbUser {
+        email?: string;
+        userEmail?: string;
+        hasActiveSub?: boolean;
+        subscriptionStatus?: string;
+        stripeCustomerId?: string | null;
+      }
+      const coll = db.collection<DbUser>("user_metadata");
+      const dbUser = await coll.findOne({ $or: [{ email }, { userEmail: email }] });
 
-      t.hasActiveSub = !!dbUser?.hasActiveSub;
+      const activeFromStatus = dbUser?.subscriptionStatus === "active";
+      t.hasActiveSub = Boolean(dbUser?.hasActiveSub || activeFromStatus);
       t.stripeCustomerId = dbUser?.stripeCustomerId ?? null;
       t.metaCheckedAt = now;
 

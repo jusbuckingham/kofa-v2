@@ -1,22 +1,31 @@
 import Stripe from "stripe";
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error("Missing STRIPE_SECRET_KEY in environment variables.");
-}
+// Read once; don’t throw at import time so non-Stripe pages can still build/run.
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY as string;
+// Narrowed global cache to avoid polluting types in dev/reload cycles
+type StripeGlobal = { stripeInstance?: Stripe | null };
+const globalForStripe = globalThis as unknown as StripeGlobal;
 
-// Use a narrowed view of globalThis for caching in dev without polluting types
-const globalForStripe = globalThis as unknown as { stripeInstance?: Stripe };
-
-const stripe =
-  globalForStripe.stripeInstance ||
-  new Stripe(stripeSecretKey, {
-    apiVersion: "2022-11-15",
-  });
+// Lazily create a singleton Stripe instance when key is present
+const stripe: Stripe | null =
+  typeof globalForStripe.stripeInstance !== "undefined"
+    ? globalForStripe.stripeInstance
+    : stripeSecretKey
+    ? new Stripe(stripeSecretKey, { apiVersion: "2022-11-15" })
+    : null;
 
 if (process.env.NODE_ENV === "development") {
+  // Cache across HMR reloads to prevent re-instantiation
   globalForStripe.stripeInstance = stripe;
 }
 
+// Optional helper for routes to check quickly
+export const isStripeConfigured = Boolean(stripe);
+
 export { stripe };
+
+// In dev, warn (don’t crash) when the key is missing to aid debugging
+if (!stripeSecretKey && process.env.NODE_ENV !== "test") {
+  console.warn("[stripe] STRIPE_SECRET_KEY is not set; Stripe features are disabled.");
+}

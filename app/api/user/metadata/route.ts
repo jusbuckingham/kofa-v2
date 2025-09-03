@@ -26,6 +26,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
     const userEmail = session.user.email;
+    const hasActiveSub = Boolean(session.user.hasActiveSub);
+    const today = todayUtcISO();
     const db = await getDb();
     const coll = db.collection<UserMetadataDoc>("user_metadata");
 
@@ -43,7 +45,31 @@ export async function GET() {
       doc = { _id: insertResult.insertedId, ...newDoc };
     }
 
-    return NextResponse.json({ metadata: doc }, { headers: { "Cache-Control": "no-store" } });
+    // Recompute canReadToday using current session (do not rely on stale DB value)
+    const currentDailyCount = doc.dailyDate === today ? (doc.dailyCount ?? 0) : 0;
+    const computedCanRead = hasActiveSub || currentDailyCount < FREE_DAILY_STORY_LIMIT;
+    const computedStatus: SubscriptionStatus = hasActiveSub ? "active" : (doc.subscriptionStatus || "none");
+
+    const shouldPersist = doc.canReadToday !== computedCanRead || doc.subscriptionStatus !== computedStatus || doc.dailyDate !== today;
+
+    if (shouldPersist) {
+      await coll.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            canReadToday: computedCanRead,
+            subscriptionStatus: computedStatus,
+            // normalize dailyDate to today when crossing day boundaries
+            dailyDate: today,
+            // keep dailyCount if same day; otherwise reset to currentDailyCount (0)
+            dailyCount: currentDailyCount,
+          },
+        }
+      );
+      doc = { ...doc, canReadToday: computedCanRead, subscriptionStatus: computedStatus, dailyDate: today, dailyCount: currentDailyCount } as typeof doc;
+    }
+
+    return NextResponse.json({ metadata: { ...doc, hasActiveSub } }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
@@ -76,8 +102,8 @@ export async function PATCH(request: Request) {
             dailyDate: {
               $cond: [{ $eq: ["$dailyDate", today] }, "$dailyDate", today],
             },
-            // Ensure subscriptionStatus has a default
-            subscriptionStatus: { $ifNull: ["$subscriptionStatus", "none"] },
+            // If session indicates active sub, reflect "active"; else keep existing or default to none
+            subscriptionStatus: hasActiveSub ? "active" : { $ifNull: ["$subscriptionStatus", "none"] },
             lastLogin: todayUTC(),
           },
         },
@@ -131,7 +157,7 @@ export async function PATCH(request: Request) {
       };
     }
 
-    return NextResponse.json({ metadata }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ metadata: { ...metadata, hasActiveSub } }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }

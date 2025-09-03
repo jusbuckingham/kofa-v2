@@ -6,24 +6,33 @@ import type { NewsStory } from "../app/types";
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB;
 
-if (!uri) {
-  throw new Error("MONGODB_URI is not set");
-}
-if (!dbName) {
-  throw new Error("MONGODB_DB_NAME (or MONGODB_DB) is not set");
-}
+export const isMongoConfigured = Boolean(uri && dbName);
 
-// Use a global to prevent exhausting connections in dev:
-const client = new MongoClient(uri);
+// Use a global to prevent exhausting connections in dev/HMR
 const g = globalThis as typeof globalThis & { _mongoClientPromise?: Promise<MongoClient> };
-export const clientPromise: Promise<MongoClient> =
-  process.env.NODE_ENV === "development"
-    ? g._mongoClientPromise || (g._mongoClientPromise = client.connect())
-    : client.connect();
+let clientPromise: Promise<MongoClient> | null = null;
+
+function getClientPromise(): Promise<MongoClient> {
+  if (!isMongoConfigured) {
+    throw new Error("MongoDB not configured: set MONGODB_URI and MONGODB_DB_NAME (or MONGODB_DB)");
+  }
+  if (!clientPromise) {
+    const client = new MongoClient(uri!);
+    clientPromise =
+      process.env.NODE_ENV === "development"
+        ? g._mongoClientPromise || (g._mongoClientPromise = client.connect())
+        : client.connect();
+  }
+  return clientPromise;
+}
 
 export async function getDb() {
-  const c = await clientPromise;
+  const c = await getClientPromise();
   return c.db(dbName);
+}
+
+if (!isMongoConfigured && process.env.NODE_ENV !== "test") {
+  console.warn("[mongo] MONGODB_URI/DB not set; DB features are disabled.");
 }
 
 /**
