@@ -93,20 +93,32 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async createUser({ user }) {
-      if (user.email) {
-        const customer = await stripe.customers.create({
-          email: user.email,
-          metadata: { email: user.email },
-        });
+      if (!user.email) return;
+      if (!stripe) {
+        // In environments without Stripe configured, skip customer creation.
         const db = await getDb();
         await db
           .collection("user_metadata")
           .updateOne(
             { email: user.email },
-            { $set: { stripeCustomerId: customer.id, hasActiveSub: false } },
+            { $set: { hasActiveSub: false } },
             { upsert: true }
           );
+        return;
       }
+
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { email: user.email },
+      });
+      const db = await getDb();
+      await db
+        .collection("user_metadata")
+        .updateOne(
+          { email: user.email },
+          { $set: { stripeCustomerId: customer.id, hasActiveSub: false } },
+          { upsert: true }
+        );
     },
   },
 };
