@@ -1,4 +1,6 @@
 'use client';
+'use client';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useSession, signIn } from 'next-auth/react';
 
@@ -103,6 +105,17 @@ export default function SubscribeButton() {
       : 'Subscribe $5/mo';
 
   const disabled = loading || status === 'loading';
+
+  if (hasActiveSub) {
+    return (
+      <Link
+        href="/account/subscription"
+        className="px-6 py-3 rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-400 bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center justify-center"
+      >
+        Manage Subscription
+      </Link>
+    );
+  }
 
   return (
     <button

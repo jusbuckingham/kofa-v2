@@ -27,10 +27,17 @@ export async function POST(req: NextRequest) {
     // Connect to DB
     const dbName = process.env.MONGODB_DB_NAME || "kofa";
     const db = (await clientPromise).db(dbName);
-    const users = db.collection("users");
+    interface UserDoc {
+      email: string;
+      stripeCustomerId?: string;
+      hasActiveSub?: boolean;
+      createdAt?: Date;
+      updatedAt?: Date;
+    }
+    const userMeta = db.collection<UserDoc>("user_metadata");
 
     // Retrieve or create Stripe customer for signed-in user
-    const user = await users.findOne({ email: userEmail });
+    const user = await userMeta.findOne({ email: userEmail });
     let stripeCustomerId = user?.stripeCustomerId as string | undefined;
 
     if (!stripeCustomerId) {
@@ -40,7 +47,7 @@ export async function POST(req: NextRequest) {
       });
       stripeCustomerId = customer.id;
 
-      await users.updateOne(
+      await userMeta.updateOne(
         { email: userEmail },
         {
           $set: {
@@ -123,12 +130,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: checkoutSession.url }, { status: 200 });
   } catch (err: unknown) {
-    console.error("[stripe:checkout] Session creation failed:", err);
+    console.error(`[stripe:checkout] Session creation failed for ${session?.user?.email ?? "unknown email"}:`, err);
     const message = err instanceof Error ? err.message : "Internal Server Error";
     const code =
       typeof err === "object" && err && "code" in (err as Record<string, unknown>)
         ? String((err as Record<string, unknown>).code)
         : undefined;
-    return NextResponse.json({ error: message, code }, { status: 500 });
+    return NextResponse.json(
+      { error: message, code },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }

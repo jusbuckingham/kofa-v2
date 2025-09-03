@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, useEffect } from "react";
 import { FiBookmark, FiShare2 } from "react-icons/fi";
 import Link from "next/link";
 import Image from "next/image";
@@ -61,6 +61,10 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<boolean>(Boolean(isSaved));
+
+  useEffect(() => {
+    setSaved(Boolean(isSaved));
+  }, [isSaved]);
 
   if (!story) return null;
 
@@ -150,7 +154,7 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
       {( ("url" in story && story.url) || ("publishedAt" in story && story.publishedAt)) && (
         <div className="mb-3 -mt-1 text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
           {"publishedAt" in story && story.publishedAt ? (
-            <time dateTime={publishedISO}>
+            <time dateTime={publishedISO} title={publishedISO ? new Date(publishedISO).toLocaleString() : undefined}>
               {formatDate(story.publishedAt)}
             </time>
           ) : null}
@@ -169,6 +173,7 @@ export default function StoryCard({ summary, isSaved, onSaved, locked }: StoryCa
             <span className="sr-only">Summary</span>
             <ul
               aria-live="polite"
+              aria-hidden={isLocked}
               className={`${
                 isLocked ? "blur-sm select-none pointer-events-none" : ""
               } list-none space-y-2 text-[0.97rem] leading-relaxed`}

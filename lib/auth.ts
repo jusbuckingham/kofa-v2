@@ -85,9 +85,37 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       const t = token as ExtendedJWT;
       const su = (session.user ?? ({} as SessionUserWithBilling)) as SessionUserWithBilling;
+
+      // 1) Fast path: copy flags from the JWT
       su.hasActiveSub = Boolean(t.hasActiveSub);
       su.stripeCustomerId = t.stripeCustomerId ?? null;
       session.user = su;
+
+      // 2) Upgrade from DB if it shows active (ensures immediate flip to Pro after checkout)
+      try {
+        const email = session.user?.email;
+        if (email) {
+          interface DbUser {
+            email?: string;
+            userEmail?: string;
+            hasActiveSub?: boolean;
+            subscriptionStatus?: string;
+            stripeCustomerId?: string | null;
+          }
+          const db = await getDb();
+          const coll = db.collection<DbUser>("user_metadata");
+          const dbUser = await coll.findOne({ $or: [{ email }, { userEmail: email }] });
+          const activeFromStatus = dbUser?.subscriptionStatus === "active";
+          const active = Boolean(dbUser?.hasActiveSub || activeFromStatus);
+          if (active) {
+            (session.user as any).hasActiveSub = true;
+            (session.user as any).stripeCustomerId = dbUser?.stripeCustomerId ?? (session.user as any).stripeCustomerId ?? null;
+          }
+        }
+      } catch {
+        // ignore DB errors in session callback to avoid breaking auth
+      }
+
       return session;
     },
   },
