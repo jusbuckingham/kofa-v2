@@ -5,7 +5,6 @@ import { stripe } from '@/lib/stripe';
 import { clientPromise } from '@/lib/mongoClient';
 import type Stripe from 'stripe';
 
-const STRIPE_CONFIGURED = Boolean(stripe);
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,7 +31,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   }
 
-  if (!STRIPE_CONFIGURED) {
+  if (!stripe) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 
@@ -129,7 +128,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   }
 
-  if (!STRIPE_CONFIGURED) {
+  if (!stripe) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 
