@@ -1,12 +1,42 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import SubscribeButton from "../components/SubscribeButton";
 
+type ReadResp = {
+  hasActiveSub?: boolean;
+  allowed?: boolean;
+  summariesToday?: number;
+  limit?: number;
+};
+
 export default function AccountPage() {
   const { data: session, status } = useSession();
-  const loading = status === "loading";
-  const active = Boolean(session?.user?.hasActiveSub);
+  const [readInfo, setReadInfo] = useState<ReadResp | null>(null);
+  const [apiLoading, setApiLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setApiLoading(true);
+        const res = await fetch("/api/user/read", { cache: "no-store" });
+        const json: ReadResp = await res.json();
+        if (mounted) setReadInfo(json);
+      } catch {
+        // ignore network/API errors and fall back to session-only state
+      } finally {
+        if (mounted) setApiLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const loading = status === "loading" || apiLoading;
+  const isPro = Boolean(session?.user?.hasActiveSub || readInfo?.hasActiveSub);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6">
@@ -15,7 +45,7 @@ export default function AccountPage() {
         <p className="text-sm text-gray-600">
           {loading
             ? "Loading your subscription status…"
-            : active
+            : isPro
             ? "You’re on the Pro plan. Thanks for supporting Kofa!"
             : "You’re on the Free plan. Upgrade to unlock unlimited summaries."}
         </p>
@@ -25,8 +55,9 @@ export default function AccountPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm text-gray-500">Current plan</div>
-            <div className="text-base font-medium">{active ? "Pro" : "Free"}</div>
+            <div className="text-base font-medium">{isPro ? "Pro" : "Free"}</div>
           </div>
+          {/* SubscribeButton reads session internally and flips to Manage when Pro */}
           <SubscribeButton />
         </div>
       </section>
