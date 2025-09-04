@@ -108,8 +108,9 @@ export const authOptions: NextAuthOptions = {
           const activeFromStatus = dbUser?.subscriptionStatus === "active";
           const active = Boolean(dbUser?.hasActiveSub || activeFromStatus);
           if (active) {
-            (session.user as any).hasActiveSub = true;
-            (session.user as any).stripeCustomerId = dbUser?.stripeCustomerId ?? (session.user as any).stripeCustomerId ?? null;
+            su.hasActiveSub = true;
+            su.stripeCustomerId = dbUser?.stripeCustomerId ?? su.stripeCustomerId ?? null;
+            session.user = su;
           }
         }
       } catch {
