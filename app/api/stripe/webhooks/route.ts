@@ -15,7 +15,10 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: '
 
 export async function POST(req: NextRequest) {
   if (!stripe || !STRIPE_WEBHOOK_SECRET) {
-    console.error('[webhook] Missing Stripe configuration. Ensure STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set.');
+    console.error('[webhook] Missing Stripe configuration.', {
+      hasSecretKey: Boolean(STRIPE_SECRET_KEY),
+      hasWebhookSecret: Boolean(STRIPE_WEBHOOK_SECRET),
+    });
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
   const sig = req.headers.get('stripe-signature');
@@ -36,6 +39,8 @@ export async function POST(req: NextRequest) {
     console.error('❌ Webhook signature verification failed:', (err as Error).message);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
+
+  console.log('[webhook] received', { type: event.type, id: event.id });
 
   // Relevant Stripe event types
   const relevant = new Set<Stripe.Event['type']>([
@@ -86,15 +91,22 @@ export async function POST(req: NextRequest) {
     email?: string | null;
     subscription?: Stripe.Subscription | null;
   }) => {
+    const normEmail = email ? email.toLowerCase() : null;
     const status = subscription?.status ?? null;
     const hasActiveSub = status === 'active' || status === 'trialing' || status === 'past_due';
 
+    console.log('[webhook] upsert user', {
+      customerId,
+      email: normEmail,
+      status,
+      hasActiveSub,
+    });
+
     await users.updateOne(
-      email
-        ? { $or: [{ stripeCustomerId: customerId }, { email }] }
-        : { stripeCustomerId: customerId },
+      normEmail ? { $or: [{ stripeCustomerId: customerId }, { email: normEmail }] } : { stripeCustomerId: customerId },
       {
         $set: {
+          email: normEmail ?? undefined,
           stripeCustomerId: customerId,
           hasActiveSub,
           subscriptionStatus: subscription?.status ?? null,
@@ -109,8 +121,8 @@ export async function POST(req: NextRequest) {
     try {
       if (email) {
         await usersCore.updateOne(
-          { email: email.toLowerCase() },
-          { $set: { stripeCustomerId: customerId } }
+          { email: normEmail! },
+          { $set: { email: normEmail, stripeCustomerId: customerId } }
         );
       }
     } catch {
@@ -124,6 +136,8 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string;
         const subscriptionId = session.subscription as string | undefined;
+
+        console.log('[webhook] checkout.session.completed', { customerId, subscriptionId, email: session.customer_details?.email ?? null });
 
         let subscription: Stripe.Subscription | null = null;
         if (subscriptionId) {
@@ -141,6 +155,9 @@ export async function POST(req: NextRequest) {
       case 'checkout.session.async_payment_failed': {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | null;
+
+        console.log('[webhook] checkout.session.async_payment_failed', { customerId });
+
         if (!customerId) break;
         await users.updateOne(
           { stripeCustomerId: customerId },
@@ -151,6 +168,9 @@ export async function POST(req: NextRequest) {
 
       case 'customer.subscription.paused': {
         const subscription = event.data.object as Stripe.Subscription;
+
+        console.log('[webhook] customer.subscription.paused', { customerId: subscription.customer as string, status: subscription.status });
+
         await users.updateOne(
           { stripeCustomerId: subscription.customer as string },
           { $set: { hasActiveSub: false, subscriptionStatus: 'paused' } }
@@ -159,6 +179,9 @@ export async function POST(req: NextRequest) {
       }
       case 'customer.subscription.resumed': {
         const subscription = event.data.object as Stripe.Subscription;
+
+        console.log('[webhook] customer.subscription.resumed', { customerId: subscription.customer as string, status: subscription.status });
+
         await upsertUserByCustomer({
           customerId: subscription.customer as string,
           subscription,
@@ -174,6 +197,9 @@ export async function POST(req: NextRequest) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
+
+        console.log('[webhook] customer.subscription.change', { type: event.type, customerId: subscription.customer as string, status: subscription.status });
+
         await upsertUserByCustomer({
           customerId: subscription.customer as string,
           subscription,
@@ -184,6 +210,9 @@ export async function POST(req: NextRequest) {
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string | null;
+
+        console.log('[webhook] invoice.payment_failed', { customerId, status: invoice.status });
+
         if (!customerId) break;
         await users.updateOne(
           { stripeCustomerId: customerId },
