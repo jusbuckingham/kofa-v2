@@ -11,6 +11,8 @@ interface UserWithSubscription {
   image?: string | null;
 }
 
+interface SessionUserPro { hasActiveSub?: boolean }
+
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -92,13 +94,35 @@ export default function Header() {
   const pathname = usePathname();
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
+  // Trust backend /api/user/read for active sub status
+  const [readHasActive, setReadHasActive] = useState<boolean | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/user/read', { cache: 'no-store' });
+        const json = await res.json();
+        if (mounted) setReadHasActive(Boolean(json?.hasActiveSub));
+      } catch {
+        // ignore network/JSON errors; fall back to session-only
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   const subscriptionStatus =
     session?.user && "subscriptionStatus" in session.user
       ? (session.user as UserWithSubscription).subscriptionStatus ?? "free"
       : "free";
 
+  const hasActiveSub = Boolean(
+    session?.user && "hasActiveSub" in session.user
+      ? (session.user as SessionUserPro).hasActiveSub
+      : false
+  );
+
   const avatar = (session?.user as UserWithSubscription | undefined)?.image ?? null;
-  const isPro = subscriptionStatus === "active" || subscriptionStatus === "trialing";
+  const isPro = hasActiveSub || readHasActive === true || subscriptionStatus === "active" || subscriptionStatus === "trialing";
   const isDev = process.env.NODE_ENV !== "production";
 
   const adminList = useMemo(() => (
@@ -250,7 +274,7 @@ export default function Header() {
               <Link
                 href="/signin"
                 prefetch={false}
-                className="inline-flex items-center rounded-md bg-white text-pink-600 px-3 py-1.5 text-sm font-semibold hover:bg	pink-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                className="inline-flex items-center rounded-md bg-white text-pink-600 px-3 py-1.5 text-sm font-semibold hover:bg-pink-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 aria-label="Sign in"
               >
                 Sign in
@@ -277,7 +301,7 @@ export default function Header() {
           <div className="pt-2 flex items-center gap-2">
             {session?.user ? (
               <>
-                { (subscriptionStatus === "active" || subscriptionStatus === "trialing") ? (
+                { isPro ? (
                   <Link
                     href="/dashboard/manage-subscription"
                     prefetch={false}

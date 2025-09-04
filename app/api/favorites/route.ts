@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
     return json({ ok: true, items, total, limit, offset });
   } catch (err) {
     if (err instanceof Response) return err;
+    console.error('[favorites][GET] Failed to load favorites:', err);
     return jsonError('Failed to load favorites', 500);
   }
 }
@@ -118,9 +119,10 @@ export async function POST(req: NextRequest) {
         { upsert: true }
       );
 
-    return json({ ok: true });
+    return json({ ok: true, storyId });
   } catch (err) {
     if (err instanceof Response) return err;
+    console.error('[favorites][POST] Failed to save favorite:', err);
     return jsonError('Failed to save favorite', 500);
   }
 }
@@ -148,9 +150,10 @@ export async function DELETE(req: NextRequest) {
 
     await db.collection<FavoriteDoc>('favorites').deleteOne({ email, storyId });
 
-    return json({ ok: true });
+    return json({ ok: true, storyId });
   } catch (err) {
     if (err instanceof Response) return err;
+    console.error('[favorites][DELETE] Failed to remove favorite:', err);
     return jsonError('Failed to remove favorite', 500);
   }
 }
