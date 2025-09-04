@@ -151,6 +151,25 @@ export async function POST(req: NextRequest) {
         });
         break;
       }
+      case 'checkout.session.async_payment_succeeded': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const customerId = session.customer as string;
+        const subscriptionId = session.subscription as string | undefined;
+
+        console.log('[webhook] checkout.session.async_payment_succeeded', { customerId, subscriptionId, email: session.customer_details?.email ?? null });
+
+        let subscription: Stripe.Subscription | null = null;
+        if (subscriptionId) {
+          subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        }
+
+        await upsertUserByCustomer({
+          customerId,
+          email: session.customer_details?.email ?? null,
+          subscription,
+        });
+        break;
+      }
 
       case 'checkout.session.async_payment_failed': {
         const session = event.data.object as Stripe.Checkout.Session;
@@ -184,6 +203,30 @@ export async function POST(req: NextRequest) {
 
         await upsertUserByCustomer({
           customerId: subscription.customer as string,
+          subscription,
+        });
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string | null;
+        const subscriptionId = invoice.subscription as (string | null | Stripe.Subscription) ?? null;
+
+        console.log('[webhook] invoice.payment_succeeded', { customerId, status: invoice.status, subscriptionId: typeof subscriptionId === 'string' ? subscriptionId : (subscriptionId && 'id' in subscriptionId ? subscriptionId.id : null) });
+
+        if (!customerId) break;
+
+        let subscription: Stripe.Subscription | null = null;
+        if (typeof subscriptionId === 'string') {
+          subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        } else if (subscriptionId && typeof subscriptionId === 'object' && 'id' in subscriptionId) {
+          subscription = subscriptionId as Stripe.Subscription;
+        }
+
+        await upsertUserByCustomer({
+          customerId,
+          email: invoice.customer_email ?? null,
           subscription,
         });
         break;

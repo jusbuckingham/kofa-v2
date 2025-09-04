@@ -11,12 +11,14 @@ import { ObjectId } from "mongodb";
 interface UserMetadataDoc {
   _id?: ObjectId;
   userEmail: string;
+  email?: string; // legacy/compat field
   totalReads: number;
   lastLogin: Date;
   dailyCount: number;
   dailyDate: string; // YYYY-MM-DD
   subscriptionStatus: SubscriptionStatus;
   canReadToday?: boolean;
+  hasActiveSub?: boolean; // compat flag that may be present from webhook
 }
 
 export async function GET() {
@@ -25,16 +27,20 @@ export async function GET() {
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
-    const userEmail = session.user.email;
-    const hasActiveSub = Boolean(session.user.hasActiveSub);
+    const normEmail = session.user.email.toLowerCase();
+    const userEmail = normEmail;
     const today = todayUtcISO();
     const db = await getDb();
     const coll = db.collection<UserMetadataDoc>("user_metadata");
+    // Ensure indexes exist for faster lookups
+    await coll.createIndex({ userEmail: 1 }, { name: "userEmail_1" });
+    await coll.createIndex({ email: 1 }, { name: "email_1" });
 
-    let doc: WithId<UserMetadataDoc> | null = await coll.findOne({ userEmail });
+    let doc: WithId<UserMetadataDoc> | null = await coll.findOne({ $or: [{ userEmail }, { email: userEmail }] });
     if (!doc) {
       const newDoc: UserMetadataDoc = {
         userEmail,
+        email: userEmail,
         totalReads: 0,
         lastLogin: todayUTC(),
         dailyCount: 0,
@@ -42,13 +48,20 @@ export async function GET() {
         subscriptionStatus: "none",
       };
       const insertResult = await coll.insertOne(newDoc);
-      doc = { _id: insertResult.insertedId, ...newDoc };
+      doc = { _id: insertResult.insertedId, ...newDoc } as WithId<UserMetadataDoc>;
     }
 
-    // Recompute canReadToday using current session (do not rely on stale DB value)
+    if (!doc) {
+      throw new Error("Failed to load or create user metadata document");
+    }
+
+    const sessionActive = Boolean(session.user.hasActiveSub);
+    const dbActive = doc.subscriptionStatus === "active" || doc.hasActiveSub === true;
+    const hasActive = sessionActive || dbActive;
+
     const currentDailyCount = doc.dailyDate === today ? (doc.dailyCount ?? 0) : 0;
-    const computedCanRead = hasActiveSub || currentDailyCount < FREE_DAILY_STORY_LIMIT;
-    const computedStatus: SubscriptionStatus = hasActiveSub ? "active" : (doc.subscriptionStatus || "none");
+    const computedCanRead = hasActive || currentDailyCount < FREE_DAILY_STORY_LIMIT;
+    const computedStatus: SubscriptionStatus = hasActive ? "active" : (doc.subscriptionStatus || "none");
 
     const shouldPersist = doc.canReadToday !== computedCanRead || doc.subscriptionStatus !== computedStatus || doc.dailyDate !== today;
 
@@ -57,20 +70,22 @@ export async function GET() {
         { _id: doc._id },
         {
           $set: {
+            userEmail,
+            email: userEmail,
             canReadToday: computedCanRead,
             subscriptionStatus: computedStatus,
-            // normalize dailyDate to today when crossing day boundaries
             dailyDate: today,
-            // keep dailyCount if same day; otherwise reset to currentDailyCount (0)
             dailyCount: currentDailyCount,
+            lastLogin: todayUTC(),
           },
         }
       );
       doc = { ...doc, canReadToday: computedCanRead, subscriptionStatus: computedStatus, dailyDate: today, dailyCount: currentDailyCount } as typeof doc;
     }
 
-    return NextResponse.json({ metadata: { ...doc, hasActiveSub } }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
+    return NextResponse.json({ metadata: { ...doc, hasActiveSub: hasActive } }, { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    console.error("[user/metadata][GET] failed", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }
@@ -81,35 +96,39 @@ export async function PATCH(request: Request) {
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
-    const userEmail = session.user.email;
+    const userEmail = session.user.email.toLowerCase();
     const { incrementRead = false } = (await request.json()) as {
       incrementRead?: boolean;
     };
 
     const db = await getDb();
     const coll = db.collection<UserMetadataDoc>("user_metadata");
+    // Ensure indexes exist for faster lookups
+    await coll.createIndex({ userEmail: 1 }, { name: "userEmail_1" });
+    await coll.createIndex({ email: 1 }, { name: "email_1" });
+
+    const existing = await coll.findOne({ $or: [{ userEmail }, { email: userEmail }] });
+    const sessionActive = Boolean(session.user.hasActiveSub);
+    const dbActive = existing?.subscriptionStatus === "active" || existing?.hasActiveSub === true;
+    const hasActive = sessionActive || dbActive;
 
     const today = todayUtcISO();
-    const hasActiveSub = Boolean(session.user.hasActiveSub);
     const result = await coll.findOneAndUpdate(
-      { userEmail },
+      { $or: [{ userEmail }, { email: userEmail }] },
       [
-        // On first write or subsequent writes, ensure essential fields exist
         {
           $set: {
             userEmail,
-            // If dailyDate matches today keep it, otherwise set to today (handles undefined/null)
+            email: userEmail,
             dailyDate: {
               $cond: [{ $eq: ["$dailyDate", today] }, "$dailyDate", today],
             },
-            // If session indicates active sub, reflect "active"; else keep existing or default to none
-            subscriptionStatus: hasActiveSub ? "active" : { $ifNull: ["$subscriptionStatus", "none"] },
+            subscriptionStatus: hasActive ? "active" : { $ifNull: ["$subscriptionStatus", "none"] },
             lastLogin: todayUTC(),
           },
         },
         {
           $set: {
-            // If still same day, add 1 (or 0) to existing count (default 0). Otherwise start at 1 (or 0)
             dailyCount: {
               $cond: [
                 { $eq: ["$dailyDate", today] },
@@ -120,11 +139,10 @@ export async function PATCH(request: Request) {
           },
         },
         {
-          // canReadToday = subscribed OR (dailyCount < FREE_DAILY_STORY_LIMIT)
           $set: {
             canReadToday: {
               $or: [
-                { $literal: hasActiveSub },
+                { $literal: hasActive },
                 { $lt: ["$dailyCount", FREE_DAILY_STORY_LIMIT] },
               ],
             },
@@ -144,21 +162,22 @@ export async function PATCH(request: Request) {
 
     let metadata = result.value;
     if (!metadata) {
-      // fallback: construct sensible defaults
       metadata = {
         _id: new ObjectId(),
         userEmail,
+        email: userEmail,
         totalReads: incrementRead ? 1 : 0,
         lastLogin: todayUTC(),
         dailyCount: incrementRead ? 1 : 0,
         dailyDate: today,
         subscriptionStatus: "none",
-        canReadToday: hasActiveSub || (incrementRead ? 1 : 0) < FREE_DAILY_STORY_LIMIT,
+        canReadToday: hasActive || (incrementRead ? 1 : 0) < FREE_DAILY_STORY_LIMIT,
       };
     }
 
-    return NextResponse.json({ metadata: { ...metadata, hasActiveSub } }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
+    return NextResponse.json({ metadata: { ...metadata, hasActiveSub: hasActive } }, { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    console.error("[user/metadata][PATCH] failed", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

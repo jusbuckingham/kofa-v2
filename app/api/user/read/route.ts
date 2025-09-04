@@ -48,8 +48,8 @@ export async function GET(req: NextRequest) {
       {
         ...res,
         hasActiveSub: res.hasActiveSub || sessionHasActive,
-        // Pro users are always allowed regardless of count
-        allowed: sessionHasActive ? true : res.allowed,
+        // Pro users are always allowed regardless of count (trust DB or session)
+        allowed: (res.hasActiveSub || sessionHasActive) ? true : res.allowed,
         limit: FREE_SUMMARIES_PER_DAY,
       },
       { headers: { ...corsHeaders, "Cache-Control": "no-store" } }
@@ -143,7 +143,8 @@ export async function POST(req: NextRequest) {
       {
         ...res,
         hasActiveSub: res.hasActiveSub || sessionHasActive,
-        allowed: sessionHasActive ? true : res.allowed,
+        // If DB or session says Pro, force allowed
+        allowed: (res.hasActiveSub || sessionHasActive) ? true : res.allowed,
         limit: FREE_SUMMARIES_PER_DAY,
       },
       { headers: { ...corsHeaders, "Cache-Control": "no-store" } }
