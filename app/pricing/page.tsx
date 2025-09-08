@@ -6,7 +6,7 @@ import SubscribeButton from '../components/SubscribeButton';
 
 export const metadata: Metadata = {
   title: 'Pricing – Kofa',
-  description: 'Choose between our Free and Pro plans. The Free plan gives you 7 stories/day, while Pro unlocks unlimited summaries for just $5/month.',
+  description: 'Choose between our Free and Pro plans. The Free plan gives you 7 stories/day, while Pro unlocks unlimited summaries for just $9.99/month.',
 };
 
 export default function PricingPage() {
@@ -32,7 +32,7 @@ export default function PricingPage() {
           <p className="text-gray-700 text-lg mb-6">
             Unlimited access to all summaries, priority updates.
           </p>
-          <p className="text-4xl font-bold mb-8">$5/month</p>
+          <p className="text-4xl font-bold mb-8">$9.99/month</p>
           <div className="flex justify-center">
             <SubscribeButton />
           </div>

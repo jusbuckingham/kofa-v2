@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const planLabel = process.env.NEXT_PUBLIC_STRIPE_PLAN_LABEL || "$5/month";
+const planLabel = process.env.NEXT_PUBLIC_STRIPE_PLAN_LABEL || "$9.99/month";
 
 export default function SubscribeButton() {
   const [loading, setLoading] = useState(false);
