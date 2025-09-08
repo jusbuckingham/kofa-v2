@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
     'customer.subscription.trial_will_end',
 
     // Billing signals
+    'invoice.payment_succeeded',
     'invoice.payment_failed',
   ]);
 
@@ -67,7 +68,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Idempotency: skip if we've already processed this Stripe event
-  const db = await getDb();
+  let db: Awaited<ReturnType<typeof getDb>> | null = null;
+  try {
+    db = await getDb();
+  } catch (e) {
+    console.error('[webhook] Database connection failed; acknowledging to Stripe to avoid retries.', {
+      message: (e as Error)?.message,
+      eventId: event.id,
+      eventType: event.type,
+    });
+    return NextResponse.json({ received: true, db: 'unavailable' }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
+  }
+
   const processed = db.collection<{ _id: string }>('stripe_events');
   try {
     const already = await processed.findOne({ _id: event.id });
@@ -130,6 +142,7 @@ export async function POST(req: NextRequest) {
     }
   };
 
+  // Process the event; on internal errors, log but still 200 so Stripe stops retrying
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -177,34 +190,31 @@ export async function POST(req: NextRequest) {
 
         console.log('[webhook] checkout.session.async_payment_failed', { customerId });
 
-        if (!customerId) break;
-        await users.updateOne(
-          { stripeCustomerId: customerId },
-          { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
-        );
+        if (customerId) {
+          await users.updateOne(
+            { stripeCustomerId: customerId },
+            { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
+          );
+        }
         break;
       }
 
       case 'customer.subscription.paused': {
         const subscription = event.data.object as Stripe.Subscription;
-
         console.log('[webhook] customer.subscription.paused', { customerId: subscription.customer as string, status: subscription.status });
-
         await users.updateOne(
           { stripeCustomerId: subscription.customer as string },
           { $set: { hasActiveSub: false, subscriptionStatus: 'paused' } }
         );
         break;
       }
-      case 'customer.subscription.resumed': {
+      case 'customer.subscription.resumed':
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-
-        console.log('[webhook] customer.subscription.resumed', { customerId: subscription.customer as string, status: subscription.status });
-
-        await upsertUserByCustomer({
-          customerId: subscription.customer as string,
-          subscription,
-        });
+        console.log('[webhook] customer.subscription.change', { type: event.type, customerId: subscription.customer as string, status: subscription.status });
+        await upsertUserByCustomer({ customerId: subscription.customer as string, subscription });
         break;
       }
 
@@ -215,65 +225,47 @@ export async function POST(req: NextRequest) {
 
         console.log('[webhook] invoice.payment_succeeded', { customerId, status: invoice.status, subscriptionId: typeof subscriptionId === 'string' ? subscriptionId : (subscriptionId && 'id' in subscriptionId ? subscriptionId.id : null) });
 
-        if (!customerId) break;
-
-        let subscription: Stripe.Subscription | null = null;
-        if (typeof subscriptionId === 'string') {
-          subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        } else if (subscriptionId && typeof subscriptionId === 'object' && 'id' in subscriptionId) {
-          subscription = subscriptionId as Stripe.Subscription;
+        if (customerId) {
+          let subscription: Stripe.Subscription | null = null;
+          if (typeof subscriptionId === 'string') {
+            subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          } else if (subscriptionId && typeof subscriptionId === 'object' && 'id' in subscriptionId) {
+            subscription = subscriptionId as Stripe.Subscription;
+          }
+          await upsertUserByCustomer({ customerId, email: invoice.customer_email ?? null, subscription });
         }
-
-        await upsertUserByCustomer({
-          customerId,
-          email: invoice.customer_email ?? null,
-          subscription,
-        });
-        break;
-      }
-      case 'customer.subscription.trial_will_end': {
-        // No state change; could send email/notification in the future.
-        break;
-      }
-
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-
-        console.log('[webhook] customer.subscription.change', { type: event.type, customerId: subscription.customer as string, status: subscription.status });
-
-        await upsertUserByCustomer({
-          customerId: subscription.customer as string,
-          subscription,
-        });
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string | null;
-
         console.log('[webhook] invoice.payment_failed', { customerId, status: invoice.status });
+        if (customerId) {
+          await users.updateOne(
+            { stripeCustomerId: customerId },
+            { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
+          );
+        }
+        break;
+      }
 
-        if (!customerId) break;
-        await users.updateOne(
-          { stripeCustomerId: customerId },
-          { $set: { hasActiveSub: false, subscriptionStatus: 'payment_failed' } }
-        );
+      case 'customer.subscription.trial_will_end':
+      default: {
+        // No-op for other types we chose to process; we still ack
         break;
       }
     }
-
-    return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (err: unknown) {
-    console.error('Webhook handler error:', {
+    console.error('Webhook handler internal error (acknowledging anyway):', {
       message: (err as Error).message,
       eventId: event.id,
       eventType: event.type,
     });
-    return NextResponse.json({ error: 'Webhook error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
+
+  // Always acknowledge to Stripe so it stops retrying; app trusts DB + session to reflect state
+  return NextResponse.json({ received: true }, { status: 200, headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function GET() {

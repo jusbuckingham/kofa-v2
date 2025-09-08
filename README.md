@@ -99,6 +99,64 @@ tsconfig.json
 
 ---
 
+---
+
+## Stripe Webhooks (Live) – Production Checklist
+
+This app expects Stripe webhooks at:
+
+```
+https://kofa.ai/api/stripe/webhooks
+```
+
+> Stripe will **disable** the endpoint if it returns anything other than HTTP **2xx** repeatedly. Use this checklist to configure and verify production.
+
+### 1) Configure in Stripe Dashboard (LIVE mode)
+- Go to **Developers → Webhooks**.
+- Select the endpoint for `https://kofa.ai/api/stripe/webhooks` (create it if it doesn’t exist).
+- Copy the **Signing secret** — it starts with `whsec_`.
+
+### 2) Configure environment vars in Vercel (Production)
+Add/update these in **Vercel → Project → Settings → Environment Variables** (Production):
+
+- `STRIPE_SECRET_KEY` → your **sk_live_...** key
+- `STRIPE_WEBHOOK_SECRET` → the **whsec_...** from the Stripe Dashboard for the endpoint above
+
+> ❗ Do not include quotes or extra whitespace. After updating, **redeploy** so the new env vars are available at runtime.
+
+### 3) Relevant events we handle
+The webhook route processes (acknowledges all, but specifically handles):
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `customer.subscription.created | updated | deleted | paused | resumed | trial_will_end`
+- `invoice.payment_succeeded`
+- `invoice.payment_failed`
+
+### 4) Test delivery
+- In Stripe Dashboard (LIVE), open the endpoint → **Send test event** (choose one of the supported types above) → confirm a **2xx** in the delivery log.
+- Or trigger a real flow (e.g., complete a Checkout Session) and confirm the event shows **2xx** and is listed under **Events → Logs**.
+
+### 5) Troubleshooting
+- **400 Invalid signature** → The `STRIPE_WEBHOOK_SECRET` in Vercel doesn’t match the endpoint’s signing secret in the Dashboard. Copy/paste the LIVE `whsec_...` again.
+- **500 Server misconfigured** → Missing `STRIPE_SECRET_KEY` or `STRIPE_WEBHOOK_SECRET` at runtime.
+- **DB connection errors** → The webhook now safely acknowledges with 200 to prevent Stripe retries; check your database credentials and connectivity separately.
+- **Middleware interference** → `middleware.ts` already allows `/api/stripe/webhooks` (no auth required). If you change middleware, keep this path whitelisted.
+
+### 6) Observability
+The route logs key events without leaking secrets. Check **Vercel → Deployments → Logs** for lines like:
+
+```
+[webhook] received { type, id }
+[webhook] upsert user { customerId, email, status, hasActiveSub }
+```
+
+### 7) Security
+- **Never** log full secrets or raw request bodies in production.
+- Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set only in server/runtime contexts.
+
+---
+
 ## License
 
 MIT © 2025 Jus Kwesi Buckingham
