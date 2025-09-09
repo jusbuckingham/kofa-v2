@@ -102,7 +102,7 @@ export default function SubscribeButton() {
       ? 'Loading…'
       : hasActiveSub
       ? 'Manage Subscription'
-      : 'Subscribe $5/mo';
+      : 'Subscribe $9.99/mo';
 
   const disabled = loading || status === 'loading';
 
